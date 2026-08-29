@@ -9,7 +9,6 @@ export async function fetchCuratedCollections() {
     return await res.json();
   } catch (err) {
     console.warn('API Curated fallback to local dataset:', err.message);
-    // Instant resilient fallback
     return {
       timestamp: new Date().toISOString(),
       collections: CURATED_COLLECTIONS
@@ -46,32 +45,24 @@ export async function searchBooksApi(query, lang = 'all', format = 'epub') {
 
 // Download stream with real-time byte progress reporting
 export async function fetchBookEpubBinary(downloadUrl, bookId, title, onProgress) {
-  if (!downloadUrl) throw new Error('URL de download não fornecida.');
+  if (!downloadUrl && !bookId) throw new Error('Identificador do livro não fornecido.');
   
   const titleParam = title ? `&title=${encodeURIComponent(title)}` : '';
-  const proxyUrl = `${API_BASE}/download?url=${encodeURIComponent(downloadUrl)}${bookId ? `&id=${encodeURIComponent(bookId)}` : ''}${titleParam}`;
+  const urlParam = downloadUrl ? `url=${encodeURIComponent(downloadUrl)}` : '';
+  const idParam = bookId ? `&id=${encodeURIComponent(bookId)}` : '';
+  const proxyUrl = `${API_BASE}/download?${urlParam}${idParam}${titleParam}`;
   console.log(`[Client API] Fetching EPUB via proxy: ${proxyUrl}`);
   
-  try {
-    const response = await fetch(proxyUrl);
-    if (!response.ok) {
-      // Direct client fetch fallback if CORS allows (e.g. Gutenberg)
-      console.warn(`[Client API] Proxy returned ${response.status}. Attempting direct download fallback...`);
-      return await directDownloadWithProgress(downloadUrl, onProgress);
-    }
-
-    return await readStreamIntoBuffer(response, onProgress);
-  } catch (err) {
-    console.warn(`[Client API] Proxy error: ${err.message}. Trying direct download...`);
-    return await directDownloadWithProgress(downloadUrl, onProgress);
-  }
-}
-
-async function directDownloadWithProgress(url, onProgress) {
-  const response = await fetch(url);
+  const response = await fetch(proxyUrl);
   if (!response.ok) {
-    throw new Error(`Falha ao baixar livro (Status ${response.status})`);
+    let errorDetail = 'Não foi possível carregar este livro no momento';
+    try {
+      const errData = await response.json();
+      if (errData && errData.error) errorDetail = errData.error;
+    } catch (e) {}
+    throw new Error(errorDetail);
   }
+
   return await readStreamIntoBuffer(response, onProgress);
 }
 
