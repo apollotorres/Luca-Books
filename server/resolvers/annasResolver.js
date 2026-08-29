@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import fs from 'fs';
 puppeteer.use(StealthPlugin());
 
 const CHROME_PATH = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
@@ -10,6 +11,11 @@ let sharedBrowser = null;
 let isInitializing = false;
 
 async function getSharedBrowser() {
+  // In serverless / cloud environments (like Vercel) where local Chrome does not exist:
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || !fs.existsSync(CHROME_PATH)) {
+    return null;
+  }
+
   if (sharedBrowser && sharedBrowser.connected) {
     return sharedBrowser;
   }
@@ -37,8 +43,8 @@ async function getSharedBrowser() {
     console.log('[Anna Resolver] Shared browser ready!');
     return sharedBrowser;
   } catch (err) {
-    console.error('[Anna Resolver] Error launching Chrome:', err.message);
-    throw err;
+    console.error('[Anna Resolver] Chrome unavailable or failed to launch:', err.message);
+    return null;
   } finally {
     isInitializing = false;
   }
@@ -47,13 +53,18 @@ async function getSharedBrowser() {
 export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
   if (!query || !query.trim()) return [];
 
-  const filterExt = format === 'all' ? '' : '&ext=epub';
-  const filterLang = lang === 'pt' ? '&lang=pt' : (lang === 'en' ? '&lang=en' : (lang === 'es' ? '&lang=es' : ''));
-  console.log(`[Anna Resolver] Searching Anna's Archive for: "${query}" (format: ${format}, lang: ${lang})`);
   let page = null;
 
   try {
     const browser = await getSharedBrowser();
+    if (!browser) {
+      return [];
+    }
+
+    const filterExt = format === 'all' ? '' : '&ext=epub';
+    const filterLang = lang === 'pt' ? '&lang=pt' : (lang === 'en' ? '&lang=en' : (lang === 'es' ? '&lang=es' : ''));
+    console.log(`[Anna Resolver] Searching Anna's Archive for: "${query}" (format: ${format}, lang: ${lang})`);
+
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 

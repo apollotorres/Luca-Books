@@ -1,3 +1,5 @@
+import { CURATED_COLLECTIONS } from '../data/curatedBooks';
+
 const API_BASE = '/api';
 
 export async function fetchCuratedCollections() {
@@ -6,20 +8,39 @@ export async function fetchCuratedCollections() {
     if (!res.ok) throw new Error('Falha ao carregar destaques');
     return await res.json();
   } catch (err) {
-    console.error('API Curated error:', err);
-    throw err;
+    console.warn('API Curated fallback to local dataset:', err.message);
+    // Instant resilient fallback
+    return {
+      timestamp: new Date().toISOString(),
+      collections: CURATED_COLLECTIONS
+    };
   }
 }
 
 export async function searchBooksApi(query, lang = 'all', format = 'epub') {
   if (!query || !query.trim()) return { results: [] };
+  
   try {
     const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(lang)}&format=${encodeURIComponent(format)}`);
-    if (!res.ok) throw new Error('Erro na busca');
+    if (!res.ok) throw new Error(`Erro na busca (${res.status})`);
     return await res.json();
   } catch (err) {
-    console.error('API Search error:', err);
-    throw err;
+    console.warn('API Search fallback to local matching:', err.message);
+    
+    // Fallback: match against local curated dataset if API offline
+    const qLower = query.toLowerCase().trim();
+    const allBooks = CURATED_COLLECTIONS.flatMap(c => c.books);
+    const matched = allBooks.filter(b => 
+      b.title.toLowerCase().includes(qLower) || 
+      b.author.toLowerCase().includes(qLower) ||
+      (b.genre && b.genre.toLowerCase().includes(qLower))
+    );
+
+    return {
+      query,
+      count: matched.length,
+      results: matched
+    };
   }
 }
 
@@ -31,11 +52,30 @@ export async function fetchBookEpubBinary(downloadUrl, bookId, title, onProgress
   const proxyUrl = `${API_BASE}/download?url=${encodeURIComponent(downloadUrl)}${bookId ? `&id=${encodeURIComponent(bookId)}` : ''}${titleParam}`;
   console.log(`[Client API] Fetching EPUB via proxy: ${proxyUrl}`);
   
-  const response = await fetch(proxyUrl);
-  if (!response.ok) {
-    throw new Error(`Erro ao baixar livro (Status ${response.status})`);
-  }
+  try {
+    const response = await fetch(proxyUrl);
+    if (!response.ok) {
+      // Direct client fetch fallback if CORS allows (e.g. Gutenberg)
+      console.warn(`[Client API] Proxy returned ${response.status}. Attempting direct download fallback...`);
+      return await directDownloadWithProgress(downloadUrl, onProgress);
+    }
 
+    return await readStreamIntoBuffer(response, onProgress);
+  } catch (err) {
+    console.warn(`[Client API] Proxy error: ${err.message}. Trying direct download...`);
+    return await directDownloadWithProgress(downloadUrl, onProgress);
+  }
+}
+
+async function directDownloadWithProgress(url, onProgress) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Falha ao baixar livro (Status ${response.status})`);
+  }
+  return await readStreamIntoBuffer(response, onProgress);
+}
+
+async function readStreamIntoBuffer(response, onProgress) {
   const contentLength = Number(response.headers.get('content-length')) || 0;
   const reader = response.body.getReader();
   let receivedLength = 0;
@@ -52,7 +92,6 @@ export async function fetchBookEpubBinary(downloadUrl, bookId, title, onProgress
         const percent = Math.min(100, Math.round((receivedLength / contentLength) * 100));
         onProgress(percent, receivedLength, contentLength);
       } else {
-        // Approximate estimation for chunked transfers
         const mb = (receivedLength / (1024 * 1024)).toFixed(1);
         onProgress(null, receivedLength, null, `${mb} MB`);
       }
