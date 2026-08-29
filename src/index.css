@@ -1,0 +1,1985 @@
+:root {
+  /* ==========================================================================
+     VERCEL-INSPIRED CLEAN MINIMALIST DESIGN TOKENS
+     ========================================================================== */
+  --bg-base: #000000;
+  --bg-sidebar: #050505;
+  --bg-surface: #0a0a0a;
+  --bg-elevated: #111111;
+  --bg-card: #0e0e10;
+  --bg-card-hover: #161618;
+  --bg-glass: rgba(5, 5, 5, 0.85);
+
+  /* Precise Vercel Borders */
+  --border-subtle: #222225;
+  --border-muted: #2e2e32;
+  --border-hover: #44444a;
+  --border-focus: #0070f3;
+
+  /* Vercel Electric Blue Accent & Highlights */
+  --accent-primary: #0070f3;
+  --accent-primary-hover: #0060df;
+  --accent-primary-light: #3291ff;
+  --accent-glow: rgba(0, 112, 243, 0.25);
+  --accent-glow-subtle: rgba(0, 112, 243, 0.1);
+  --accent-cyan: #50e3c2;
+  --accent-purple: #7928ca;
+  --accent-rose: #ff0080;
+  --accent-amber: #f5a623;
+
+  /* Clean High-Contrast Typography */
+  --font-sans: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Geist', 'Plus Jakarta Sans', -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
+  --font-serif: 'Literata', 'Merriweather', Georgia, serif;
+
+  /* Neutral Text Ramp */
+  --text-main: #ededed;
+  --text-muted: #a1a1aa;
+  --text-subtle: #71717a;
+  --text-dark: #09090b;
+
+  /* Radii */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.8);
+  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.9);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.95);
+  --shadow-glow: 0 0 24px var(--accent-glow);
+
+  /* Transitions */
+  --transition-fast: 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-normal: 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-spring: 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Animations */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.99); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 112, 243, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(0, 112, 243, 0.5); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes floatSoft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-spin {
+  animation: spin 0.9s linear infinite;
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-glow {
+  animation: glowPulse 2.5s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: floatSoft 3s ease-in-out infinite;
+}
+
+/* Global Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  letter-spacing: -0.01em;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* App Container Layout */
+.app-container {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 1fr auto;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-base);
+}
+
+.mobile-only-import-btn {
+  display: none !important;
+}
+
+.desktop-only {
+  display: block;
+}
+
+.desktop-actions-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+
+
+/* =========================================================================
+   SIDEBAR (VERCEL MINIMALIST)
+   ========================================================================= */
+.sidebar {
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px 16px;
+  gap: 24px;
+  user-select: none;
+  z-index: 10;
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  text-decoration: none;
+  color: var(--text-main);
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  background: #ffffff;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #000000;
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.2);
+  transition: transform var(--transition-fast);
+}
+
+.brand-logo:hover .brand-icon {
+  transform: scale(1.05);
+}
+
+.brand-name {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.brand-badge {
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  background: rgba(0, 112, 243, 0.15);
+  color: var(--accent-primary-light);
+  border: 1px solid rgba(0, 112, 243, 0.3);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  margin-left: auto;
+}
+
+.nav-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: transparent;
+  border: 1px solid transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.nav-item:hover {
+  color: var(--text-main);
+  background-color: var(--bg-elevated);
+  border-color: var(--border-subtle);
+}
+
+.nav-item.active {
+  color: #ffffff;
+  background-color: #141417;
+  border-color: var(--border-muted);
+  font-weight: 600;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+.sidebar-section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+  font-weight: 600;
+  padding: 0 12px;
+}
+
+.quick-import-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.quick-import-btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  color: var(--text-main);
+}
+
+.storage-status-card {
+  margin-top: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.storage-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.storage-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary);
+}
+
+/* =========================================================================
+   MAIN VIEWPORT & TOPBAR
+   ========================================================================= */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  position: relative;
+  background: radial-gradient(circle at 80% 0%, rgba(0, 112, 243, 0.05) 0%, transparent 50%),
+              var(--bg-base);
+}
+
+/* Top Navbar */
+.top-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 16px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 440px;
+  width: 100%;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-subtle);
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 9px 14px 9px 38px;
+  background-color: #0c0c0e;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-size: 0.88rem;
+  font-family: var(--font-sans);
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.search-input:focus {
+  background-color: #121215;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-primary), 0 0 16px var(--accent-glow-subtle);
+}
+
+.search-input::placeholder {
+  color: var(--text-subtle);
+}
+
+.filter-chips-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.chip-btn {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.chip-btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+  color: var(--text-main);
+}
+
+.chip-btn.active {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+  font-weight: 600;
+}
+
+/* Page Scrollable View */
+.page-view {
+  padding: 24px 32px 120px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+
+/* =========================================================================
+   HERO BANNER (CLEAN MINIMALIST)
+   ========================================================================= */
+.hero-spotlight {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: linear-gradient(135deg, #0c0f14 0%, #06080b 100%);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+  padding: 32px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.hero-glow-bg {
+  position: absolute;
+  top: -40%;
+  left: -20%;
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(0, 112, 243, 0.18) 0%, transparent 70%);
+  pointer-events: none;
+  filter: blur(50px);
+}
+
+.hero-cover-wrapper {
+  position: relative;
+  flex-shrink: 0;
+  width: 155px;
+  height: 230px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 112, 243, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: transform var(--transition-spring);
+}
+
+.hero-cover-wrapper:hover {
+  transform: translateY(-3px) scale(1.02);
+}
+
+.hero-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.hero-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 2;
+  max-width: 620px;
+}
+
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 112, 243, 0.12);
+  color: var(--accent-primary-light);
+  border: 1px solid rgba(0, 112, 243, 0.3);
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  width: fit-content;
+}
+
+.hero-title {
+  font-family: var(--font-heading);
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.hero-author {
+  font-size: 1rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.hero-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #ffffff;
+  color: #000000;
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 9px 20px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.15);
+}
+
+.btn-primary:hover {
+  background: #eaeaea;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-main);
+  font-weight: 500;
+  font-size: 0.88rem;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+}
+
+/* =========================================================================
+   BOOK CARDS & CAROUSELS (MINIMALIST GEOMETRIC)
+   ========================================================================= */
+.carousel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.carousel-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.carousel-title-group h2 {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.carousel-title-group p {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.carousel-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.carousel-arrow-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.carousel-arrow-btn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-hover);
+}
+
+.carousel-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(175px, 190px);
+  gap: 18px;
+  overflow-x: auto;
+  padding: 2px 0 8px 0;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+.carousel-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* Book Card */
+.book-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.book-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+}
+
+.book-cover-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+  background: #080808;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.book-card-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--transition-fast);
+}
+
+.book-card:hover .book-card-cover {
+  transform: scale(1.02);
+}
+
+.book-floating-play-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-primary);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 112, 243, 0.4);
+  opacity: 0;
+  transform: translateY(6px) scale(0.95);
+  transition: all var(--transition-spring);
+  border: none;
+  cursor: pointer;
+  z-index: 5;
+}
+
+.book-card:hover .book-floating-play-btn {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.book-floating-play-btn:hover {
+  background: var(--accent-primary-light);
+  transform: scale(1.06) !important;
+}
+
+.book-card-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+  font-size: 0.65rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+}
+
+.book-card-badge.badge-epub {
+  color: var(--accent-primary-light);
+  border: 1px solid rgba(0, 112, 243, 0.4);
+}
+
+.book-card-badge.badge-pdf {
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.book-card-lang-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+  font-size: 0.64rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  z-index: 4;
+}
+
+.book-card-lang-badge.lang-pt {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(8, 18, 30, 0.85);
+}
+
+.book-card-lang-badge.lang-other {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+}
+
+.book-card-offline-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0, 112, 243, 0.9);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.book-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.book-card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.book-card-author {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.book-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+}
+
+.book-progress-bar-bg {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.book-progress-bar-fill {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: var(--radius-full);
+}
+
+/* Grid Layout */
+.books-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 20px;
+}
+
+/* =========================================================================
+   MINI PLAYER BAR (MINIMALIST)
+   ========================================================================= */
+.mini-player-bar {
+  grid-column: 1 / -1;
+  background: #09090b;
+  border-top: 1px solid var(--border-subtle);
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  z-index: 30;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.7);
+  user-select: none;
+}
+
+.mini-book-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 180px;
+  max-width: 300px;
+}
+
+.mini-book-cover {
+  width: 38px;
+  height: 52px;
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mini-book-texts {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mini-book-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-book-author {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-player-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 500px;
+}
+
+.mini-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mini-player-read-btn {
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: #000000;
+  font-weight: 600;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.mini-player-read-btn:hover {
+  background: #eaeaea;
+  transform: scale(1.02);
+}
+
+.mini-progress-wrapper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+}
+
+.mini-progress-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.mini-player-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  justify-content: flex-end;
+}
+
+.icon-action-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.icon-action-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+}
+
+/* =========================================================================
+   READER MODAL & VIEW (VERCEL MINIMALIST)
+   ========================================================================= */
+/* =========================================================================
+   APPLE BOOKS READER INTERFACE (IOS & IPADOS MINIMALIST)
+   ========================================================================= */
+.reader-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: var(--reader-bg, #121215);
+  color: var(--reader-text, #e4e4e7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: fadeIn 0.18s ease-out;
+  user-select: none;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* 1. Apple Books Topbar */
+.apple-books-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(12px, env(safe-area-inset-top, 12px)) 18px 12px 18px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.4) 0%, transparent 100%);
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+.apple-books-theme-light .apple-books-topbar,
+.apple-books-theme-sepia .apple-books-topbar {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.7) 0%, transparent 100%);
+}
+
+.apple-books-topbar.hidden {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+
+.apple-topbar-left,
+.apple-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.apple-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--reader-text, #ffffff);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.84rem;
+  font-weight: 500;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.apple-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.02);
+}
+
+.apple-topbar-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 55%;
+  overflow: hidden;
+}
+
+.apple-chapter-badge {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--reader-text, #ededed);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.apple-progress-subtext {
+  font-size: 0.7rem;
+  color: var(--reader-muted, #a1a1aa);
+  font-family: var(--font-mono);
+}
+
+/* 2. Reader Viewport Area */
+.reader-viewer-area {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.reader-viewer-area.mode-paginated {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reader-viewer-area.mode-scrolled {
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reader-viewer-area.mode-scrolled::-webkit-scrollbar {
+  width: 5px;
+}
+.reader-viewer-area.mode-scrolled::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+
+.apple-books-content-frame {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  height: 100%;
+  transition: max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.apple-books-content-frame.is-single-spread {
+  max-width: 720px;
+}
+
+.apple-books-content-frame.is-double-spread {
+  max-width: 1160px;
+  padding: 0 20px;
+}
+
+/* Subtle open-book spine shadow crease for dual page spread */
+.book-spine-crease {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 32px;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    to right, 
+    transparent 0%, 
+    rgba(0, 0, 0, 0.08) 42%, 
+    rgba(0, 0, 0, 0.18) 50%, 
+    rgba(0, 0, 0, 0.08) 58%, 
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+.apple-books-theme-light .book-spine-crease,
+.apple-books-theme-sepia .book-spine-crease {
+  background: linear-gradient(
+    to right, 
+    transparent 0%, 
+    rgba(0, 0, 0, 0.04) 40%, 
+    rgba(0, 0, 0, 0.12) 50%, 
+    rgba(0, 0, 0, 0.04) 60%, 
+    transparent 100%
+  );
+}
+
+.mode-paginated .apple-books-content-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mode-scrolled .apple-books-content-frame {
+  min-height: 100%;
+  padding: 60px 0 90px 0;
+}
+
+.epub-viewport {
+  width: 100%;
+  height: 100%;
+  user-select: text;
+}
+
+/* Desktop Arrow Buttons */
+.apple-nav-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 52px;
+  background: rgba(18, 18, 22, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--reader-text, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  z-index: 20;
+  opacity: 0.15;
+}
+
+.apple-nav-arrow:hover {
+  opacity: 0.9;
+  background: rgba(25, 25, 30, 0.9);
+  transform: translateY(-50%) scale(1.05);
+}
+
+.apple-nav-prev { left: 16px; }
+.apple-nav-next { right: 16px; }
+
+/* 3. Apple Books Minimalist Footer (Page Counter) */
+.apple-books-footer {
+  position: absolute;
+  bottom: max(10px, env(safe-area-inset-bottom, 10px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.apple-books-footer.hidden {
+  opacity: 0;
+}
+
+.apple-page-counter-text {
+  font-size: 0.72rem;
+  color: var(--reader-muted, #71717a);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* 4. The Iconic Apple Books Floating Bottom-Right Pill Menu */
+.apple-floating-container {
+  position: absolute;
+  bottom: max(18px, env(safe-area-inset-bottom, 18px));
+  right: 18px;
+  z-index: 60;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.apple-floating-container.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+}
+
+.apple-pill-trigger-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background: rgba(26, 26, 32, 0.88);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.apple-books-theme-light .apple-pill-trigger-btn {
+  background: rgba(240, 240, 245, 0.9);
+  color: #09090b;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.apple-books-theme-sepia .apple-pill-trigger-btn {
+  background: rgba(235, 220, 192, 0.9);
+  color: #3c2e1f;
+  border-color: rgba(60, 46, 31, 0.15);
+}
+
+.apple-pill-trigger-btn:hover,
+.apple-pill-trigger-btn.active {
+  transform: scale(1.06);
+}
+
+.apple-pill-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: rgba(0, 112, 243, 0.25);
+  pointer-events: none;
+}
+
+.apple-pill-label {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Apple Books Floating Popover Menu (Matches exact iOS screenshot) */
+.apple-books-floating-menu {
+  position: absolute;
+  bottom: 54px;
+  right: 0;
+  width: 250px;
+  border-radius: 18px;
+  background: rgba(30, 30, 36, 0.92);
+  backdrop-filter: blur(35px);
+  -webkit-backdrop-filter: blur(35px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 0 1px rgba(255, 255, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 5px;
+  animation: applePopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 70;
+}
+
+.apple-books-theme-light .apple-books-floating-menu {
+  background: rgba(245, 245, 248, 0.94);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.18);
+}
+
+.apple-books-theme-sepia .apple-books-floating-menu {
+  background: rgba(244, 235, 212, 0.95);
+  border-color: rgba(60, 46, 31, 0.14);
+}
+
+@keyframes applePopIn {
+  0% { transform: scale(0.92) translateY(10px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.apple-menu-row-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--reader-text, #ffffff);
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+  overflow: hidden;
+  text-align: left;
+}
+
+.apple-books-theme-light .apple-menu-row-item,
+.apple-books-theme-sepia .apple-menu-row-item {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.apple-menu-row-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.apple-books-theme-light .apple-menu-row-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.apple-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.apple-progress-strip-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: rgba(0, 112, 243, 0.18);
+  pointer-events: none;
+  border-radius: 12px;
+}
+
+.apple-menu-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 8px 4px 4px 4px;
+  gap: 4px;
+}
+
+.apple-bottom-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  color: var(--reader-text, #ffffff);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.apple-books-theme-light .apple-bottom-action-btn {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.apple-bottom-action-btn:hover,
+.apple-bottom-action-btn.active {
+  background: rgba(0, 112, 243, 0.2);
+  color: var(--accent-primary-light);
+  border-color: rgba(0, 112, 243, 0.3);
+}
+
+/* 5. Themes & Appearance Popover (Apple Books AA) */
+.apple-settings-popover {
+  position: absolute;
+  bottom: 54px;
+  right: 0;
+  width: 290px;
+  border-radius: 20px;
+  background: rgba(30, 30, 36, 0.95);
+  backdrop-filter: blur(35px);
+  -webkit-backdrop-filter: blur(35px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.7);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: applePopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 75;
+}
+
+.apple-books-theme-light .apple-settings-popover {
+  background: rgba(245, 245, 248, 0.96);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.18);
+}
+
+.apple-books-theme-sepia .apple-settings-popover {
+  background: rgba(244, 235, 212, 0.96);
+  border-color: rgba(60, 46, 31, 0.14);
+}
+
+.apple-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.apple-close-mini-btn {
+  background: transparent;
+  border: none;
+  color: var(--reader-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+}
+
+.apple-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.apple-section-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--reader-muted, #71717a);
+  font-family: var(--font-mono);
+}
+
+.apple-theme-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.apple-theme-circle-btn {
+  height: 38px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.apple-theme-circle-btn.active {
+  border-color: var(--accent-primary);
+  transform: scale(1.05);
+}
+
+.apple-circle-light { background: #fbfbfe; color: #1a1a1e; }
+.apple-circle-sepia { background: #f5ecd7; color: #3c2e1f; }
+.apple-circle-dark { background: #18181c; color: #f8fafc; }
+.apple-circle-oled { background: #000000; color: #f8fafc; }
+
+.apple-theme-name-tag {
+  font-size: 0.65rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 6. TOC Modal Drawer (Apple Books style) */
+.apple-toc-modal-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  background: rgba(22, 22, 26, 0.96);
+  backdrop-filter: blur(35px);
+  -webkit-backdrop-filter: blur(35px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  z-index: 80;
+  animation: slideInLeft 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.apple-books-theme-light .apple-toc-modal-drawer {
+  background: rgba(248, 248, 252, 0.96);
+  border-right-color: rgba(0, 0, 0, 0.1);
+}
+
+.apple-books-theme-sepia .apple-toc-modal-drawer {
+  background: rgba(244, 235, 212, 0.96);
+  border-right-color: rgba(60, 46, 31, 0.12);
+}
+
+.toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.toc-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toc-item {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  color: var(--reader-text, #ffffff);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.toc-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-primary-light);
+}
+
+/* Loading & Error Overlays in Apple Books Reader */
+.apple-loading-overlay,
+.apple-error-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--reader-bg, #0a0a0c);
+  z-index: 50;
+  padding: 20px;
+}
+
+.apple-error-card {
+  max-width: 380px;
+  width: 100%;
+  background: var(--reader-card-bg, #18181c);
+  border: 1px solid var(--reader-border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.apple-error-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* =========================================================================
+   VERCEL-STYLE CLEAN LOADING EXPERIENCE
+   ========================================================================= */
+.reader-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 380px;
+  width: 90%;
+  padding: 32px 24px;
+  background: #09090b;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 112, 243, 0.1);
+  text-align: center;
+  gap: 18px;
+  animation: fadeIn 0.2s ease-out;
+  position: relative;
+}
+
+.loading-cover-glow-container {
+  position: relative;
+  width: 95px;
+  height: 140px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 112, 243, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.loading-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.loading-stepped-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: #18181b;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  position: relative;
+}
+
+.loading-stepped-bar-fill {
+  height: 100%;
+  background: var(--accent-primary);
+  border-radius: var(--radius-full);
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 10px var(--accent-primary);
+}
+
+/* Modal Dialog */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+  padding: 20px;
+}
+
+.modal-card {
+  background: #09090b;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  max-width: 480px;
+  width: 100%;
+  padding: 24px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dropzone {
+  border: 1px dashed #27272a;
+  border-radius: var(--radius-md);
+  padding: 36px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dropzone:hover, .dropzone.active {
+  border-color: var(--accent-primary);
+  background: rgba(0, 112, 243, 0.05);
+}
+
+/* =========================================================================
+   RESPONSIVE DESIGN (IPAD & IPHONE ADAPTATIONS)
+   ========================================================================= */
+
+/* Tablet (iPad Portrait & Landscape: 769px - 1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .app-container {
+    grid-template-columns: 200px 1fr;
+  }
+  
+  .sidebar {
+    padding: 20px 12px;
+    gap: 18px;
+  }
+  
+  .nav-item {
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    gap: 8px;
+  }
+  
+  .page-view {
+    padding: 20px 24px 100px 24px;
+    gap: 28px;
+  }
+  
+  .hero-spotlight {
+    padding: 24px;
+    gap: 20px;
+  }
+  
+  .hero-title {
+    font-size: 1.7rem;
+  }
+}
+
+/* Mobile (iPhone & Small Tablets: <= 768px) */
+@media (max-width: 768px) {
+  .app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .desktop-only,
+  .desktop-actions-section,
+  .brand-logo,
+  .sidebar-divider {
+    display: none !important;
+  }
+
+  .mobile-only-import-btn {
+    display: flex !important;
+  }
+
+  /* Fixed Sleek Bottom Navigation Bar */
+  .sidebar {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    height: 60px !important;
+    height: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 6px 12px env(safe-area-inset-bottom, 6px) 12px !important;
+    background: rgba(9, 9, 11, 0.94) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border-top: 1px solid var(--border-subtle) !important;
+    border-right: none !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    z-index: 60 !important;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.8) !important;
+    gap: 0 !important;
+  }
+
+  .nav-menu {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    width: 100% !important;
+    gap: 4px !important;
+  }
+
+  .nav-item {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    padding: 4px 6px !important;
+    font-size: 0.68rem !important;
+    font-weight: 500 !important;
+    color: var(--text-muted) !important;
+    border-radius: var(--radius-sm) !important;
+    text-align: center !important;
+    width: auto !important;
+  }
+
+  .nav-item.active {
+    color: var(--accent-primary-light) !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    font-weight: 600 !important;
+  }
+
+  .main-content {
+    flex: 1;
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 70px;
+  }
+
+  .top-navbar {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .search-bar-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    order: 1;
+  }
+
+  .filter-chips-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    padding-bottom: 4px;
+    order: 2;
+  }
+
+  .page-view {
+    padding: 16px 14px 90px 14px;
+    gap: 24px;
+  }
+
+  /* Responsive Hero Spotlight */
+  .hero-spotlight {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 20px 16px;
+    gap: 16px;
+  }
+
+  .hero-cover-wrapper {
+    width: 120px;
+    height: 175px;
+  }
+
+  .hero-title {
+    font-size: 1.45rem;
+  }
+
+  .hero-actions {
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .hero-actions .btn-primary,
+  .hero-actions .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Responsive Carousels and Grids */
+  .book-grid {
+    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  .carousel-item {
+    min-width: 135px !important;
+    max-width: 145px !important;
+  }
+
+  .book-card-cover-container {
+    height: 190px !important;
+  }
+
+  /* Mini Player on Mobile */
+  .mini-player-bar {
+    position: fixed;
+    bottom: 60px;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    left: 0;
+    right: 0;
+    z-index: 55;
+    padding: 8px 12px;
+    background: rgba(12, 12, 14, 0.95);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .mini-player-center {
+    display: none;
+  }
+
+  /* Apple Books Reader on Mobile */
+  .apple-books-topbar {
+    padding: max(10px, env(safe-area-inset-top, 10px)) 12px 10px 12px;
+  }
+
+  .apple-chapter-badge {
+    max-width: 140px;
+    font-size: 0.78rem;
+  }
+
+  .apple-progress-subtext {
+    font-size: 0.68rem;
+  }
+
+  .apple-btn-label {
+    display: none;
+  }
+
+  .apple-books-content-frame {
+    padding: 0 10px;
+  }
+
+  .apple-floating-container {
+    bottom: max(14px, env(safe-area-inset-bottom, 14px));
+    right: 14px;
+  }
+
+  .apple-pill-trigger-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .apple-books-floating-menu {
+    bottom: 48px;
+    right: 0;
+    width: 230px;
+  }
+
+  .apple-settings-popover {
+    bottom: 48px;
+    right: 0;
+    width: calc(100vw - 28px);
+    max-width: 300px;
+  }
+
+  .apple-toc-modal-drawer {
+    width: 88%;
+    max-width: 320px;
+  }
+}

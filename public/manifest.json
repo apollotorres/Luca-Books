@@ -1,0 +1,17 @@
+{
+  "name": "Lumina - Spotify dos Livros",
+  "short_name": "Lumina",
+  "description": "Encontre qualquer livro e leia instantaneamente em um app moderno, leve e 100% offline.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0d0e",
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='%2310b981'><rect width='512' height='512' rx='128' fill='%23151719'/><path fill='%2310b981' d='M256 64L64 160l192 96 192-96-192-96zm-192 192l192 96 192-96M64 352l192 96 192-96'/></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
