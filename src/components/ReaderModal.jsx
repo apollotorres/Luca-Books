@@ -21,9 +21,7 @@ import {
   Search,
   Share2,
   Sliders,
-  MoreHorizontal,
-  AlignJustify,
-  Check
+  MoreHorizontal
 } from 'lucide-react';
 import { 
   getBookBinary, 
@@ -68,12 +66,12 @@ export const THEMES = {
 };
 
 const AVAILABLE_FONTS = [
-  { id: 'Literata', name: 'Literata', category: 'serif' },
-  { id: 'Merriweather', name: 'Merriweather', category: 'serif' },
-  { id: 'Lora', name: 'Lora', category: 'serif' },
-  { id: 'Inter', name: 'Inter', category: 'sans' },
-  { id: 'Georgia', name: 'Georgia', category: 'serif' },
-  { id: 'Cinzel', name: 'Cinzel', category: 'serif' }
+  { id: 'Literata', name: 'Literata' },
+  { id: 'Merriweather', name: 'Merriweather' },
+  { id: 'Lora', name: 'Lora' },
+  { id: 'Inter', name: 'Inter' },
+  { id: 'Georgia', name: 'Georgia' },
+  { id: 'Cinzel', name: 'Cinzel' }
 ];
 
 function generateReaderCss(settings) {
@@ -106,7 +104,6 @@ function generateReaderCss(settings) {
       padding: ${isScrolled ? '36px 24px 120px 24px' : '0 24px'} !important;
     }
 
-    /* Force all text elements to inherit typography and theme colors while preserving layout */
     p, div, span, li, blockquote, em, strong, b, i, small, pre, code {
       color: inherit !important;
       font-family: "${settings.fontFamily}", ${fontFallback} !important;
@@ -156,7 +153,6 @@ function generateReaderCss(settings) {
       border-collapse: collapse !important;
     }
 
-    /* Clean publisher tags */
     .advertisement, .watermark, script {
       display: none !important;
     }
@@ -173,7 +169,6 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
   const [loadingStatus, setLoadingStatus] = useState('Conectando aos servidores...');
   const [downloadProgress, setDownloadProgress] = useState(12);
   const [downloadDetail, setDownloadDetail] = useState('Localizando espelhos de alta velocidade');
-  const [loadingStep, setLoadingStep] = useState(1);
   const [error, setError] = useState(null);
 
   const [currentChapter, setCurrentChapter] = useState('');
@@ -211,48 +206,46 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
     });
   }, []);
 
-  // Injects/Updates dynamic CSS into all active ePub.js iframes
+  // Injects/Updates dynamic CSS into all active iframes safely
   const applyStylesToRendition = useCallback((targetSettings) => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-
-    const css = generateReaderCss(targetSettings);
     const theme = THEMES[targetSettings.theme] || THEMES.dark;
+    const css = generateReaderCss(targetSettings);
 
     try {
-      // 1. Inject into all active content iframes
-      const contents = rendition.getContents();
-      if (contents && contents.length > 0) {
-        contents.forEach(content => {
-          if (!content || !content.document) return;
-          const doc = content.document;
-          
-          let styleTag = doc.getElementById('luca-reader-dynamic-styles');
-          if (!styleTag) {
-            styleTag = doc.createElement('style');
-            styleTag.id = 'luca-reader-dynamic-styles';
-            doc.head.appendChild(styleTag);
-          }
-          styleTag.textContent = css;
+      if (viewerRef.current) {
+        const iframes = viewerRef.current.querySelectorAll('iframe');
+        iframes.forEach(iframe => {
+          try {
+            const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+            if (doc) {
+              let styleTag = doc.getElementById('luca-reader-dynamic-styles');
+              if (!styleTag) {
+                styleTag = doc.createElement('style');
+                styleTag.id = 'luca-reader-dynamic-styles';
+                doc.head.appendChild(styleTag);
+              }
+              styleTag.textContent = css;
 
-          // Set background on html & body directly
-          if (doc.documentElement) {
-            doc.documentElement.style.backgroundColor = theme.body.background;
-            doc.documentElement.style.color = theme.body.color;
-          }
-          if (doc.body) {
-            doc.body.style.backgroundColor = theme.body.background;
-            doc.body.style.color = theme.body.color;
-          }
+              if (doc.documentElement) {
+                doc.documentElement.style.backgroundColor = theme.body.background;
+                doc.documentElement.style.color = theme.body.color;
+              }
+              if (doc.body) {
+                doc.body.style.backgroundColor = theme.body.background;
+                doc.body.style.color = theme.body.color;
+              }
+            }
+          } catch (e) {}
         });
       }
 
-      // 2. Set theme and overrides on rendition
-      rendition.themes.override('font-size', `${targetSettings.fontSize}px`, true);
-      rendition.themes.override('font-family', targetSettings.fontFamily, true);
-      rendition.themes.select(targetSettings.theme);
+      if (renditionRef.current && renditionRef.current.themes) {
+        renditionRef.current.themes.override('font-size', `${targetSettings.fontSize}px`, true);
+        renditionRef.current.themes.override('font-family', targetSettings.fontFamily, true);
+        renditionRef.current.themes.select(targetSettings.theme);
+      }
     } catch (err) {
-      console.warn('[Reader] Style application note:', err);
+      console.warn('[Reader] Style update notice:', err);
     }
   }, []);
 
@@ -262,7 +255,6 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
       const updated = { ...prev, [key]: value };
       saveReaderSettings(updated);
       
-      // If updating theme, font, or size, apply instantly without full reload
       if (key === 'theme' || key === 'fontFamily' || key === 'fontSize' || key === 'lineHeight') {
         setTimeout(() => applyStylesToRendition(updated), 10);
       }
@@ -298,7 +290,6 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         setShowSettings(false);
       }
     } else {
-      // In scrolled mode, center tap toggles HUD
       setIsHudVisible(prev => !prev);
       setShowAppleMenu(false);
       setShowSettings(false);
@@ -314,16 +305,13 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
       setLoading(true);
       setError(null);
       setDownloadProgress(10);
-      setLoadingStep(1);
 
       try {
-        // 1. Get binary from cache or stream proxy
         setLoadingStatus('Verificando armazenamento...');
         setDownloadDetail('Consultando cache offline');
         let epubBuffer = await getBookBinary(book.id);
 
         if (!epubBuffer) {
-          setLoadingStep(2);
           setLoadingStatus('Baixando do Anna\'s Archive...');
           setDownloadProgress(25);
 
@@ -350,36 +338,37 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         }
 
         if (!isMounted) return;
-        setLoadingStep(3);
         setDownloadProgress(90);
         setLoadingStatus('Diagramando livro...');
         setDownloadDetail('Renderizando tipografia e layout');
 
-        // 2. Clean up previous instances
+        // Clean container DOM and previous instances
         if (renditionRef.current) {
           try { renditionRef.current.destroy(); } catch (e) {}
         }
         if (bookInstanceRef.current) {
           try { bookInstanceRef.current.destroy(); } catch (e) {}
         }
+        if (viewerRef.current) {
+          viewerRef.current.innerHTML = '';
+        }
 
-        // 3. Initialize ePub.js
         const bookInstance = ePub(epubBuffer);
         bookInstanceRef.current = bookInstance;
 
         bookInstance.loaded.navigation.then(nav => {
-          if (nav && nav.toc) {
+          if (nav && nav.toc && isMounted) {
             setToc(nav.toc);
           }
-        });
+        }).catch(() => {});
 
+        // Safely generate locations in background
         bookInstance.ready.then(() => {
-          return bookInstance.locations.generate(1000);
-        }).then(() => {
-          console.log('[Reader] Locations generated');
-        }).catch(e => console.log('Location note:', e));
+          if (bookInstance.spine && bookInstance.spine.length) {
+            return bookInstance.locations.generate(1000).catch(() => {});
+          }
+        }).catch(() => {});
 
-        // 4. Configure Rendition with precise Flow & Manager
         const isScrolled = settings.readingMode === 'scrolled';
         const isDoublePage = !isScrolled && settings.pageSpread === 'double';
 
@@ -387,23 +376,21 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           width: '100%',
           height: '100%',
           spread: isDoublePage ? 'always' : 'never',
-          flow: isScrolled ? 'scrolled' : 'paginated',
-          manager: isScrolled ? 'continuous' : 'default',
+          flow: isScrolled ? 'scrolled-doc' : 'paginated',
           allowScriptedContent: true
         };
 
         const rendition = bookInstance.renderTo(viewerRef.current, renditionOptions);
         renditionRef.current = rendition;
 
-        // Register hook to strip scripts and apply dynamic styles on every chapter
+        // Hook content styling when any chapter loads
         rendition.hooks.content.register((contents) => {
+          if (!contents) return;
           try {
-            const doc = contents.document;
+            const doc = contents.document || (contents.window && contents.window.document);
             if (doc) {
-              // Strip obtrusive scripts
               doc.querySelectorAll('script').forEach(s => s.remove());
 
-              // Inject CSS
               const css = generateReaderCss(settingsRef.current);
               let styleTag = doc.getElementById('luca-reader-dynamic-styles');
               if (!styleTag) {
@@ -413,20 +400,18 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
               }
               styleTag.textContent = css;
 
-              // Hook tap/click events inside iframe
               doc.addEventListener('click', (e) => {
-                const rect = doc.body.getBoundingClientRect();
                 const clickX = e.clientX;
                 const width = window.innerWidth;
                 handleReaderInteraction(clickX, width);
               });
             }
           } catch (e) {
-            console.warn('[Reader] Content hook notice:', e);
+            console.warn('[Reader] Content hook error:', e);
           }
         });
 
-        // Register Apple Books themes in ePub.js
+        // Register themes
         Object.keys(THEMES).forEach(themeKey => {
           rendition.themes.register(themeKey, {
             body: THEMES[themeKey].body,
@@ -438,7 +423,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
 
         rendition.themes.select(settings.theme);
 
-        // 5. Restore saved position or last known CFI
+        // Display saved position
         const savedProgress = await getReadingProgress(book.id);
         const targetCfi = currentCfiRef.current || (savedProgress && savedProgress.cfi);
         
@@ -449,16 +434,20 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             await rendition.display();
           }
         } catch (dispErr) {
-          await rendition.display();
+          try {
+            await rendition.display();
+          } catch (retryErr) {
+            console.warn('Initial render fallback notice:', retryErr);
+          }
         }
 
         if (!isMounted) return;
         setLoading(false);
 
-        // Apply styles one more time to guarantee fonts and colors
+        // Apply final styling pass
         applyStylesToRendition(settingsRef.current);
 
-        // 6. Hook location & progress tracking
+        // Location & progress tracking
         rendition.on('relocated', (location) => {
           if (!location || !location.start) return;
           const currentCfi = location.start.cfi;
@@ -468,13 +457,15 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           let pageNum = null;
           let totalPages = null;
 
-          if (bookInstance.locations && bookInstance.locations.length() > 0) {
-            percent = bookInstance.locations.percentageFromCfi(currentCfi) || 0;
-            pageNum = bookInstance.locations.locationFromCfi(currentCfi);
-            totalPages = bookInstance.locations.total;
-          } else if (location.start.percentage) {
-            percent = location.start.percentage;
-          }
+          try {
+            if (bookInstance.locations && bookInstance.locations.length && bookInstance.locations.length() > 0) {
+              percent = bookInstance.locations.percentageFromCfi(currentCfi) || 0;
+              pageNum = bookInstance.locations.locationFromCfi(currentCfi);
+              totalPages = bookInstance.locations.total;
+            } else if (location.start.percentage) {
+              percent = location.start.percentage;
+            }
+          } catch (locErr) {}
 
           setProgress(percent);
           if (pageNum && totalPages) {
