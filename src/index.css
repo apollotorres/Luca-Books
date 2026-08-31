@@ -1183,13 +1183,30 @@ html, body {
 
 .mode-scrolled .apple-books-content-frame {
   min-height: 100%;
-  padding: 60px 0 90px 0;
+  height: auto !important;
+  max-width: 760px;
+  padding: 48px 0 120px 0;
 }
 
 .epub-viewport {
   width: 100%;
   height: 100%;
   user-select: text;
+}
+
+.mode-scrolled .epub-viewport {
+  height: auto !important;
+  min-height: 100%;
+}
+
+.mode-scrolled .epubjs-container,
+.mode-scrolled .epub-view {
+  width: 100% !important;
+  height: auto !important;
+}
+
+.mode-scrolled iframe {
+  width: 100% !important;
 }
 
 /* Desktop Arrow Buttons */
@@ -1248,35 +1265,35 @@ html, body {
 /* 4. The Iconic Apple Books Floating Bottom-Right Pill Menu */
 .apple-floating-container {
   position: absolute;
-  bottom: max(18px, env(safe-area-inset-bottom, 18px));
-  right: 18px;
+  bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  right: 20px;
   z-index: 60;
   transition: opacity 0.22s ease, transform 0.22s ease;
 }
 
 .apple-floating-container.hidden {
   opacity: 0;
+  transform: scale(0.92);
   pointer-events: none;
-  transform: translateY(8px);
 }
 
 .apple-pill-trigger-btn {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 9999px;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-full);
   background: rgba(26, 26, 32, 0.88);
   backdrop-filter: blur(25px);
   -webkit-backdrop-filter: blur(25px);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+  color: var(--reader-text, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.2);
   overflow: hidden;
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
 }
 
 .apple-books-theme-light .apple-pill-trigger-btn {
@@ -1372,6 +1389,7 @@ html, body {
 .apple-books-theme-light .apple-menu-row-item,
 .apple-books-theme-sepia .apple-menu-row-item {
   border-bottom-color: rgba(0, 0, 0, 0.06);
+  color: var(--reader-text, #1c1917);
 }
 
 .apple-menu-row-item:hover {
@@ -1421,8 +1439,10 @@ html, body {
   transition: all var(--transition-fast);
 }
 
-.apple-books-theme-light .apple-bottom-action-btn {
+.apple-books-theme-light .apple-bottom-action-btn,
+.apple-books-theme-sepia .apple-bottom-action-btn {
   background: rgba(0, 0, 0, 0.04);
+  color: var(--reader-text, #1c1917);
 }
 
 .apple-bottom-action-btn:hover,
@@ -1437,7 +1457,7 @@ html, body {
   position: absolute;
   bottom: 54px;
   right: 0;
-  width: 290px;
+  width: 310px;
   border-radius: 20px;
   background: rgba(30, 30, 36, 0.95);
   backdrop-filter: blur(35px);
@@ -1456,11 +1476,13 @@ html, body {
   background: rgba(245, 245, 248, 0.96);
   border-color: rgba(0, 0, 0, 0.1);
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.18);
+  color: #1c1917;
 }
 
 .apple-books-theme-sepia .apple-settings-popover {
   background: rgba(244, 235, 212, 0.96);
   border-color: rgba(60, 46, 31, 0.14);
+  color: #382a1d;
 }
 
 .apple-settings-header {
@@ -1469,6 +1491,11 @@ html, body {
   justify-content: space-between;
   padding-bottom: 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.apple-books-theme-light .apple-settings-header,
+.apple-books-theme-sepia .apple-settings-header {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
 }
 
 .apple-close-mini-btn {
@@ -1509,23 +1536,102 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform var(--transition-fast), border-color var(--transition-fast);
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .apple-theme-circle-btn.active {
-  border-color: var(--accent-primary);
+  border-color: var(--accent-primary, #10b981);
   transform: scale(1.05);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
 }
 
-.apple-circle-light { background: #fbfbfe; color: #1a1a1e; }
-.apple-circle-sepia { background: #f5ecd7; color: #3c2e1f; }
-.apple-circle-dark { background: #18181c; color: #f8fafc; }
-.apple-circle-oled { background: #000000; color: #f8fafc; }
+.apple-circle-light { 
+  background: #fdfbf7; 
+  color: #1c1917; 
+  border: 1px solid rgba(0, 0, 0, 0.15); 
+}
+
+.apple-circle-sepia { 
+  background: #f5ecd7; 
+  color: #382a1d; 
+  border: 1px solid rgba(60, 46, 31, 0.2); 
+}
+
+.apple-circle-dark { 
+  background: #18181c; 
+  color: #f8fafc; 
+  border: 1px solid rgba(255, 255, 255, 0.15); 
+}
+
+.apple-circle-oled { 
+  background: #000000; 
+  color: #f8fafc; 
+  border: 1px solid rgba(255, 255, 255, 0.25); 
+}
 
 .apple-theme-name-tag {
   font-size: 0.65rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Font & Layout Option Buttons Grid */
+.font-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.font-option-btn {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--reader-text, #ffffff);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: all var(--transition-fast);
+}
+
+.apple-books-theme-light .font-option-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #1c1917;
+}
+
+.apple-books-theme-sepia .font-option-btn {
+  background: rgba(60, 46, 31, 0.06);
+  border-color: rgba(60, 46, 31, 0.12);
+  color: #382a1d;
+}
+
+.font-option-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.apple-books-theme-light .font-option-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.font-option-btn.active {
+  background: var(--accent-primary, #10b981);
+  color: #ffffff !important;
+  border-color: var(--accent-primary, #10b981);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+  font-weight: 600;
+}
+
+.apple-books-theme-light .font-option-btn.active,
+.apple-books-theme-sepia .font-option-btn.active {
+  background: #18181b;
+  color: #ffffff !important;
+  border-color: #18181b;
 }
 
 /* 6. TOC Modal Drawer (Apple Books style) */

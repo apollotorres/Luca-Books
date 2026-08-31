@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ePub from 'epubjs';
 import { 
   X, 
@@ -21,7 +21,9 @@ import {
   Search,
   Share2,
   Sliders,
-  MoreHorizontal
+  MoreHorizontal,
+  AlignJustify,
+  Check
 } from 'lucide-react';
 import { 
   getBookBinary, 
@@ -34,33 +36,138 @@ import {
 } from '../services/db';
 import { fetchBookEpubBinary } from '../services/api';
 
-const THEMES = {
+export const THEMES = {
   light: {
+    id: 'light',
     name: 'Papel Claro',
-    body: { background: '#fbfbfe', color: '#1a1a1e' },
-    ui: { bg: '#f4f4f7', cardBg: '#ffffff', text: '#09090b', border: '#e2e2e7', muted: '#64748b' }
+    body: { background: '#fdfbf7', color: '#1c1917' },
+    ui: { bg: '#f4f0ea', cardBg: '#ffffff', text: '#09090b', border: '#e5dec9', muted: '#71717a' },
+    accent: '#0284c7'
   },
   sepia: {
+    id: 'sepia',
     name: 'Sépia Suave',
-    body: { background: '#f5ecd7', color: '#3c2e1f' },
-    ui: { bg: '#ebdcc0', cardBg: '#f8efe0', text: '#3c2e1f', border: '#dfceac', muted: '#7d6951' }
+    body: { background: '#f5ecd7', color: '#382a1d' },
+    ui: { bg: '#e8dbbe', cardBg: '#faf4e6', text: '#2d1f12', border: '#d9c9a3', muted: '#78644e' },
+    accent: '#b45309'
   },
   dark: {
-    name: 'Grafite Escuro',
-    body: { background: '#121215', color: '#e4e4e7' },
-    ui: { bg: '#18181c', cardBg: '#222228', text: '#f8fafc', border: '#2e2e36', muted: '#a1a1aa' }
+    id: 'dark',
+    name: 'Grafite Noturno',
+    body: { background: '#18181b', color: '#e4e4e7' },
+    ui: { bg: '#202024', cardBg: '#27272a', text: '#f4f4f5', border: '#3f3f46', muted: '#a1a1aa' },
+    accent: '#10b981'
   },
   oled: {
+    id: 'oled',
     name: 'OLED Puro',
     body: { background: '#000000', color: '#d4d4d8' },
-    ui: { bg: '#09090b', cardBg: '#141416', text: '#f8fafc', border: '#202024', muted: '#71717a' }
+    ui: { bg: '#09090b', cardBg: '#121215', text: '#f4f4f5', border: '#27272a', muted: '#71717a' },
+    accent: '#10b981'
   }
 };
+
+const AVAILABLE_FONTS = [
+  { id: 'Literata', name: 'Literata', category: 'serif' },
+  { id: 'Merriweather', name: 'Merriweather', category: 'serif' },
+  { id: 'Lora', name: 'Lora', category: 'serif' },
+  { id: 'Inter', name: 'Inter', category: 'sans' },
+  { id: 'Georgia', name: 'Georgia', category: 'serif' },
+  { id: 'Cinzel', name: 'Cinzel', category: 'serif' }
+];
+
+function generateReaderCss(settings) {
+  const theme = THEMES[settings.theme] || THEMES.dark;
+  const isScrolled = settings.readingMode === 'scrolled';
+  const fontFallback = settings.fontFamily === 'Inter' ? 'sans-serif' : 'serif';
+  const fontSize = Number(settings.fontSize) || 18;
+  const lineHeight = Number(settings.lineHeight) || 1.65;
+
+  return `
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=Literata:ital,opsz,wght@0,7..72,300..800;1,7..72,300..800&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap');
+
+    html {
+      background-color: ${theme.body.background} !important;
+      color: ${theme.body.color} !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    body {
+      background-color: ${theme.body.background} !important;
+      color: ${theme.body.color} !important;
+      font-family: "${settings.fontFamily}", ${fontFallback} !important;
+      font-size: ${fontSize}px !important;
+      line-height: ${lineHeight} !important;
+      -webkit-font-smoothing: antialiased !important;
+      -moz-osx-font-smoothing: grayscale !important;
+      text-rendering: optimizeLegibility !important;
+      margin: 0 !important;
+      padding: ${isScrolled ? '36px 24px 120px 24px' : '0 24px'} !important;
+    }
+
+    /* Force all text elements to inherit typography and theme colors while preserving layout */
+    p, div, span, li, blockquote, em, strong, b, i, small, pre, code {
+      color: inherit !important;
+      font-family: "${settings.fontFamily}", ${fontFallback} !important;
+      background-color: transparent !important;
+    }
+
+    p, li, blockquote {
+      font-size: ${fontSize}px !important;
+      line-height: ${lineHeight} !important;
+      margin-top: 0.6em !important;
+      margin-bottom: 0.6em !important;
+      text-align: justify !important;
+      text-justify: inter-word !important;
+      hyphens: auto !important;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: inherit !important;
+      font-family: "${settings.fontFamily}", ${fontFallback} !important;
+      font-weight: 700 !important;
+      text-align: left !important;
+    }
+
+    h1 { font-size: ${Math.round(fontSize * 1.55)}px !important; margin: 1.3em 0 0.6em 0 !important; line-height: 1.25 !important; }
+    h2 { font-size: ${Math.round(fontSize * 1.35)}px !important; margin: 1.1em 0 0.5em 0 !important; line-height: 1.3 !important; }
+    h3 { font-size: ${Math.round(fontSize * 1.18)}px !important; margin: 1em 0 0.4em 0 !important; }
+
+    img, svg, image {
+      max-width: 100% !important;
+      height: auto !important;
+      object-fit: contain !important;
+      display: block !important;
+      margin: 1.2em auto !important;
+    }
+
+    a, a:link, a:visited {
+      color: ${theme.accent || '#10b981'} !important;
+      text-decoration: none !important;
+    }
+
+    a:hover {
+      text-decoration: underline !important;
+    }
+
+    table {
+      max-width: 100% !important;
+      border-collapse: collapse !important;
+    }
+
+    /* Clean publisher tags */
+    .advertisement, .watermark, script {
+      display: none !important;
+    }
+  `;
+}
 
 export function ReaderModal({ book, onClose, onProgressUpdate }) {
   const viewerRef = useRef(null);
   const bookInstanceRef = useRef(null);
   const renditionRef = useRef(null);
+  const currentCfiRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('Conectando aos servidores...');
@@ -74,30 +181,131 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
   const [toc, setToc] = useState([]);
   const [showToc, setShowToc] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showAppleMenu, setShowAppleMenu] = useState(false); // Floating Apple Books pill menu
-  const [isHudVisible, setIsHudVisible] = useState(true); // Toggle topbar/footer on screen tap
+  const [showAppleMenu, setShowAppleMenu] = useState(false);
+  const [isHudVisible, setIsHudVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [currentPageInfo, setCurrentPageInfo] = useState('');
 
-  // Reader Settings: 2 Simple Modes + Dual-Page Spread option
+  // Reader Settings State
   const [settings, setSettings] = useState({
     theme: 'dark',
     fontFamily: 'Literata',
     fontSize: 18,
-    lineHeight: 1.6,
-    readingMode: 'paginated', // 'paginated' (Passar página) | 'scrolled' (Scroll contínuo)
-    pageSpread: 'single'      // 'single' (1 Página centralizada) | 'double' (2 Páginas lado a lado)
+    lineHeight: 1.65,
+    readingMode: 'paginated', // 'paginated' | 'scrolled'
+    pageSpread: 'single'      // 'single' | 'double'
   });
 
-  // Load user reader settings
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  // Load saved settings
   useEffect(() => {
     getReaderSettings().then(saved => {
-      if (saved) setSettings(prev => ({ ...prev, ...saved }));
+      if (saved) {
+        setSettings(prev => ({ ...prev, ...saved }));
+      }
     });
   }, []);
 
-  // Initialize or Re-initialize EPUB reader
+  // Injects/Updates dynamic CSS into all active ePub.js iframes
+  const applyStylesToRendition = useCallback((targetSettings) => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    const css = generateReaderCss(targetSettings);
+    const theme = THEMES[targetSettings.theme] || THEMES.dark;
+
+    try {
+      // 1. Inject into all active content iframes
+      const contents = rendition.getContents();
+      if (contents && contents.length > 0) {
+        contents.forEach(content => {
+          if (!content || !content.document) return;
+          const doc = content.document;
+          
+          let styleTag = doc.getElementById('luca-reader-dynamic-styles');
+          if (!styleTag) {
+            styleTag = doc.createElement('style');
+            styleTag.id = 'luca-reader-dynamic-styles';
+            doc.head.appendChild(styleTag);
+          }
+          styleTag.textContent = css;
+
+          // Set background on html & body directly
+          if (doc.documentElement) {
+            doc.documentElement.style.backgroundColor = theme.body.background;
+            doc.documentElement.style.color = theme.body.color;
+          }
+          if (doc.body) {
+            doc.body.style.backgroundColor = theme.body.background;
+            doc.body.style.color = theme.body.color;
+          }
+        });
+      }
+
+      // 2. Set theme and overrides on rendition
+      rendition.themes.override('font-size', `${targetSettings.fontSize}px`, true);
+      rendition.themes.override('font-family', targetSettings.fontFamily, true);
+      rendition.themes.select(targetSettings.theme);
+    } catch (err) {
+      console.warn('[Reader] Style application note:', err);
+    }
+  }, []);
+
+  // Update Settings with instant live reactivity
+  const updateSetting = useCallback((key, value) => {
+    setSettings(prev => {
+      const updated = { ...prev, [key]: value };
+      saveReaderSettings(updated);
+      
+      // If updating theme, font, or size, apply instantly without full reload
+      if (key === 'theme' || key === 'fontFamily' || key === 'fontSize' || key === 'lineHeight') {
+        setTimeout(() => applyStylesToRendition(updated), 10);
+      }
+      return updated;
+    });
+  }, [applyStylesToRendition]);
+
+  // Fast Navigation Actions
+  const handleNextPage = useCallback(() => {
+    if (loading || error || !renditionRef.current) return;
+    if (settings.readingMode === 'paginated') {
+      renditionRef.current.next();
+    }
+  }, [loading, error, settings.readingMode]);
+
+  const handlePrevPage = useCallback(() => {
+    if (loading || error || !renditionRef.current) return;
+    if (settings.readingMode === 'paginated') {
+      renditionRef.current.prev();
+    }
+  }, [loading, error, settings.readingMode]);
+
+  // Handle clicking inside the reader or iframe
+  const handleReaderInteraction = useCallback((clickX, width) => {
+    if (settingsRef.current.readingMode === 'paginated') {
+      if (clickX < width * 0.22) {
+        handlePrevPage();
+      } else if (clickX > width * 0.78) {
+        handleNextPage();
+      } else {
+        setIsHudVisible(prev => !prev);
+        setShowAppleMenu(false);
+        setShowSettings(false);
+      }
+    } else {
+      // In scrolled mode, center tap toggles HUD
+      setIsHudVisible(prev => !prev);
+      setShowAppleMenu(false);
+      setShowSettings(false);
+    }
+  }, [handlePrevPage, handleNextPage]);
+
+  // Main Initialize ePub Reader effect
   useEffect(() => {
     let isMounted = true;
 
@@ -109,15 +317,14 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
       setLoadingStep(1);
 
       try {
-        // 1. Check if EPUB binary is in local IndexedDB
-        setLoadingStatus('Verificando cache no dispositivo...');
-        setDownloadDetail('Consultando armazenamento local');
+        // 1. Get binary from cache or stream proxy
+        setLoadingStatus('Verificando armazenamento...');
+        setDownloadDetail('Consultando cache offline');
         let epubBuffer = await getBookBinary(book.id);
 
-        // 2. Fetch via stream proxy with resilient auto-recovery if needed
         if (!epubBuffer) {
           setLoadingStep(2);
-          setLoadingStatus('Baixando livro...');
+          setLoadingStatus('Baixando do Anna\'s Archive...');
           setDownloadProgress(25);
 
           epubBuffer = await fetchBookEpubBinary(
@@ -145,10 +352,10 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         if (!isMounted) return;
         setLoadingStep(3);
         setDownloadProgress(90);
-        setLoadingStatus('Formatando diagramação...');
+        setLoadingStatus('Diagramando livro...');
         setDownloadDetail('Renderizando tipografia e layout');
 
-        // 3. Clean up previous instances
+        // 2. Clean up previous instances
         if (renditionRef.current) {
           try { renditionRef.current.destroy(); } catch (e) {}
         }
@@ -156,7 +363,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           try { bookInstanceRef.current.destroy(); } catch (e) {}
         }
 
-        // 4. Initialize ePub.js
+        // 3. Initialize ePub.js
         const bookInstance = ePub(epubBuffer);
         bookInstanceRef.current = bookInstance;
 
@@ -172,42 +379,58 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           console.log('[Reader] Locations generated');
         }).catch(e => console.log('Location note:', e));
 
-        // Render with selected flow ('paginated' or 'scrolled-doc') and spread ('always' or 'never')
+        // 4. Configure Rendition with precise Flow & Manager
         const isScrolled = settings.readingMode === 'scrolled';
         const isDoublePage = !isScrolled && settings.pageSpread === 'double';
 
-        const rendition = bookInstance.renderTo(viewerRef.current, {
+        const renditionOptions = {
           width: '100%',
           height: '100%',
           spread: isDoublePage ? 'always' : 'never',
-          flow: isScrolled ? 'scrolled-doc' : 'paginated',
+          flow: isScrolled ? 'scrolled' : 'paginated',
+          manager: isScrolled ? 'continuous' : 'default',
           allowScriptedContent: true
-        });
+        };
+
+        const rendition = bookInstance.renderTo(viewerRef.current, renditionOptions);
         renditionRef.current = rendition;
 
-        // Strip obsolete scripts from EPUB chapters to prevent console errors
+        // Register hook to strip scripts and apply dynamic styles on every chapter
         rendition.hooks.content.register((contents) => {
           try {
             const doc = contents.document;
             if (doc) {
-              const scripts = doc.querySelectorAll('script');
-              scripts.forEach(s => s.remove());
+              // Strip obtrusive scripts
+              doc.querySelectorAll('script').forEach(s => s.remove());
+
+              // Inject CSS
+              const css = generateReaderCss(settingsRef.current);
+              let styleTag = doc.getElementById('luca-reader-dynamic-styles');
+              if (!styleTag) {
+                styleTag = doc.createElement('style');
+                styleTag.id = 'luca-reader-dynamic-styles';
+                doc.head.appendChild(styleTag);
+              }
+              styleTag.textContent = css;
+
+              // Hook tap/click events inside iframe
+              doc.addEventListener('click', (e) => {
+                const rect = doc.body.getBoundingClientRect();
+                const clickX = e.clientX;
+                const width = window.innerWidth;
+                handleReaderInteraction(clickX, width);
+              });
             }
-          } catch (e) {}
+          } catch (e) {
+            console.warn('[Reader] Content hook notice:', e);
+          }
         });
 
-        // Apply Apple Books Themes
+        // Register Apple Books themes in ePub.js
         Object.keys(THEMES).forEach(themeKey => {
           rendition.themes.register(themeKey, {
-            body: {
-              ...THEMES[themeKey].body,
-              'font-family': `${settings.fontFamily}, serif !important`,
-              'font-size': `${settings.fontSize}px !important`,
-              'line-height': `${settings.lineHeight} !important`,
-              'padding': isScrolled ? '24px 20px !important' : '0 24px !important'
-            },
+            body: THEMES[themeKey].body,
             'p, h1, h2, h3, h4, h5, h6, span, div': {
-              'font-family': `${settings.fontFamily}, serif !important`,
               'color': 'inherit !important'
             }
           });
@@ -215,11 +438,13 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
 
         rendition.themes.select(settings.theme);
 
-        // 5. Restore saved position (CFI)
+        // 5. Restore saved position or last known CFI
         const savedProgress = await getReadingProgress(book.id);
+        const targetCfi = currentCfiRef.current || (savedProgress && savedProgress.cfi);
+        
         try {
-          if (savedProgress && savedProgress.cfi) {
-            await rendition.display(savedProgress.cfi);
+          if (targetCfi) {
+            await rendition.display(targetCfi);
           } else {
             await rendition.display();
           }
@@ -230,10 +455,14 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         if (!isMounted) return;
         setLoading(false);
 
-        // 6. Hook progress tracking
+        // Apply styles one more time to guarantee fonts and colors
+        applyStylesToRendition(settingsRef.current);
+
+        // 6. Hook location & progress tracking
         rendition.on('relocated', (location) => {
           if (!location || !location.start) return;
           const currentCfi = location.start.cfi;
+          currentCfiRef.current = currentCfi;
           
           let percent = 0;
           let pageNum = null;
@@ -288,49 +517,16 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         try { bookInstanceRef.current.destroy(); } catch (e) {}
       }
     };
-  }, [book, settings.readingMode, settings.pageSpread]);
+  }, [book, settings.readingMode, settings.pageSpread, applyStylesToRendition, handleReaderInteraction]);
 
-  // Fast Navigation Actions
-  const handleNextPage = () => {
-    if (loading || error || !renditionRef.current) return;
-    renditionRef.current.next();
-  };
-
-  const handlePrevPage = () => {
-    if (loading || error || !renditionRef.current) return;
-    renditionRef.current.prev();
-  };
-
-  // Screen click handler (Center taps toggle HUD, sides turn pages in paginated mode)
+  // Screen click handler on outer area
   const handleViewportAreaClick = (e) => {
-    // If clicking on a button or menu, do nothing
-    if (e.target.closest('button') || e.target.closest('.apple-books-floating-menu') || e.target.closest('.reader-settings-panel') || e.target.closest('.reader-toc-drawer')) {
+    if (e.target.closest('button') || e.target.closest('.apple-books-floating-menu') || e.target.closest('.apple-settings-popover') || e.target.closest('.apple-toc-modal-drawer')) {
       return;
     }
-
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const width = rect.width;
-
-    if (settings.readingMode === 'paginated') {
-      if (clickX < width * 0.22) {
-        // Left zone: Previous page
-        handlePrevPage();
-      } else if (clickX > width * 0.78) {
-        // Right zone: Next page
-        handleNextPage();
-      } else {
-        // Center zone: Toggle HUD visibility & close floating popovers
-        setIsHudVisible(!isHudVisible);
-        setShowAppleMenu(false);
-        setShowSettings(false);
-      }
-    } else {
-      // In scrolled mode: Center tap toggles HUD
-      setIsHudVisible(!isHudVisible);
-      setShowAppleMenu(false);
-      setShowSettings(false);
-    }
+    handleReaderInteraction(clickX, rect.width);
   };
 
   // Keyboard navigation
@@ -355,24 +551,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showToc, showSettings, showAppleMenu, settings.readingMode, onClose]);
-
-  // Update Settings
-  const updateSetting = (key, value) => {
-    const newSettings = { ...settings, [key]: value };
-    setSettings(newSettings);
-    saveReaderSettings(newSettings);
-
-    if (renditionRef.current) {
-      if (key === 'theme') {
-        renditionRef.current.themes.select(value);
-      } else if (key === 'fontSize') {
-        renditionRef.current.themes.fontSize(`${value}px`);
-      } else if (key === 'fontFamily') {
-        renditionRef.current.themes.font(value);
-      }
-    }
-  };
+  }, [showToc, showSettings, showAppleMenu, settings.readingMode, onClose, handleNextPage, handlePrevPage]);
 
   const currentThemeUI = THEMES[settings.theme]?.ui || THEMES.dark.ui;
   const currentThemeBody = THEMES[settings.theme]?.body || THEMES.dark.body;
@@ -397,7 +576,9 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         '--reader-text': currentThemeBody.color,
         '--reader-card-bg': currentThemeUI.cardBg,
         '--reader-border': currentThemeUI.border,
-        '--reader-muted': currentThemeUI.muted
+        '--reader-muted': currentThemeUI.muted,
+        backgroundColor: currentThemeBody.background,
+        color: currentThemeBody.color
       }}
     >
       {/* 1. Apple Books Minimalist Topbar */}
@@ -419,7 +600,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             {currentChapter || book?.title || 'Capítulo'}
           </span>
           <span className="apple-progress-subtext">
-            {formattedPct}% lido • {settings.readingMode === 'paginated' ? (currentPageInfo || 'Páginas') : 'Rolagem'}
+            {formattedPct}% lido • {settings.readingMode === 'paginated' ? (currentPageInfo || 'Páginas') : 'Scroll Contínuo'}
           </span>
         </div>
 
@@ -434,10 +615,11 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         </div>
       </header>
 
-      {/* 2. Main Reader Viewport with Touch Zones */}
+      {/* 2. Main Reader Viewport with Touch & Scroll Areas */}
       <main 
         className={`reader-viewer-area mode-${settings.readingMode}`}
         onClick={handleViewportAreaClick}
+        style={{ backgroundColor: currentThemeBody.background }}
       >
         {/* Navigation Arrows for Desktop (Paginated Mode) */}
         {settings.readingMode === 'paginated' && (
@@ -465,7 +647,10 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         )}
 
         {/* EPUB Viewport Container */}
-        <div className={`apple-books-content-frame ${settings.readingMode === 'paginated' && settings.pageSpread === 'double' ? 'is-double-spread' : 'is-single-spread'}`}>
+        <div 
+          className={`apple-books-content-frame ${settings.readingMode === 'paginated' && settings.pageSpread === 'double' ? 'is-double-spread' : 'is-single-spread'}`}
+          style={{ backgroundColor: currentThemeBody.background }}
+        >
           {settings.readingMode === 'paginated' && settings.pageSpread === 'double' && (
             <div className="book-spine-crease" />
           )}
@@ -473,12 +658,13 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             ref={viewerRef} 
             className="epub-viewport"
             id="epub-reader-container"
+            style={{ backgroundColor: currentThemeBody.background }}
           />
         </div>
 
         {/* Loading Overlay */}
         {loading && (
-          <div className="apple-loading-overlay">
+          <div className="apple-loading-overlay" style={{ backgroundColor: currentThemeBody.background }}>
             <div className="reader-loading-card">
               <div className="loading-cover-glow-container animate-float animate-glow">
                 {book?.cover ? (
@@ -535,7 +721,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
 
         {/* Error Fallback */}
         {error && (
-          <div className="apple-error-overlay">
+          <div className="apple-error-overlay" style={{ backgroundColor: currentThemeBody.background }}>
             <div className="apple-error-card">
               <div className="apple-error-icon">
                 <AlertCircle size={32} />
@@ -573,7 +759,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             setShowAppleMenu(!showAppleMenu);
             setShowSettings(false);
           }}
-          title="Menu Apple Books"
+          title="Menu de Leitura"
         >
           <div className="apple-pill-progress-fill" style={{ width: `${formattedPct}%` }} />
           <span className="apple-pill-label">
@@ -604,7 +790,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
               <List size={18} />
             </button>
 
-            {/* Row 2: Reading Mode (Páginas vs Scroll) */}
+            {/* Row 2: Reading Mode (Páginas vs Scroll Contínuo) */}
             <button 
               className="apple-menu-row-item"
               onClick={() => {
@@ -614,10 +800,10 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
               <div className="apple-row-left">
                 <span>Modo: {settings.readingMode === 'paginated' ? 'Passar Páginas' : 'Scroll Contínuo'}</span>
               </div>
-              {settings.readingMode === 'paginated' ? <FileText size={18} /> : <ScrollText size={18} />}
+              {settings.readingMode === 'paginated' ? <FileText size={18} /> : <ScrollText size={18} color="var(--accent-primary-light)" />}
             </button>
 
-            {/* Row 3: Page Spread (1 Página vs 2 Páginas Lado a Lado) - active in paginated mode */}
+            {/* Row 3: Page Spread (1 Página vs 2 Páginas Lado a Lado) */}
             {settings.readingMode === 'paginated' && (
               <button 
                 className="apple-menu-row-item"
@@ -637,6 +823,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
               className="apple-menu-row-item"
               onClick={() => {
                 setShowSettings(!showSettings);
+                setShowAppleMenu(false);
               }}
             >
               <div className="apple-row-left">
@@ -675,14 +862,14 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         )}
       </div>
 
-      {/* 5. Themes & Typography Drawer / Popover */}
+      {/* 5. Themes, Typography & Appearance Popover */}
       {showSettings && (
         <div 
           className="apple-settings-popover"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="apple-settings-header">
-            <h4 style={{ fontSize: '0.9rem', fontWeight: 700 }}>Aparência & Leitura</h4>
+            <h4 style={{ fontSize: '0.92rem', fontWeight: 700 }}>Aparência & Tipografia</h4>
             <button 
               onClick={() => setShowSettings(false)}
               className="apple-close-mini-btn"
@@ -691,9 +878,9 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             </button>
           </div>
 
-          {/* Theme Selection Palette */}
+          {/* Theme Selection Palette (4 Themes) */}
           <div className="apple-settings-section">
-            <span className="apple-section-label">Tema</span>
+            <span className="apple-section-label">Cor da Página</span>
             <div className="apple-theme-palette-grid">
               {Object.keys(THEMES).map(tKey => (
                 <button
@@ -708,70 +895,98 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             </div>
           </div>
 
-          {/* Dual Page Spread Selection (Only in Paginated Mode) */}
-          {settings.readingMode === 'paginated' && (
-            <div className="apple-settings-section">
-              <span className="apple-section-label">Distribuição de Páginas</span>
-              <div className="font-options-grid">
-                <button
-                  className={`font-option-btn ${settings.pageSpread === 'single' ? 'active' : ''}`}
-                  onClick={() => updateSetting('pageSpread', 'single')}
-                >
-                  📄 1 Página
-                </button>
-                <button
-                  className={`font-option-btn ${settings.pageSpread === 'double' ? 'active' : ''}`}
-                  onClick={() => updateSetting('pageSpread', 'double')}
-                >
-                  📖 2 Páginas (Aberto)
-                </button>
-              </div>
+          {/* Reading Mode Selector */}
+          <div className="apple-settings-section">
+            <span className="apple-section-label">Modo de Leitura</span>
+            <div className="font-options-grid">
+              <button
+                className={`font-option-btn ${settings.readingMode === 'paginated' ? 'active' : ''}`}
+                onClick={() => updateSetting('readingMode', 'paginated')}
+              >
+                <FileText size={14} style={{ marginRight: '4px' }} />
+                Páginas
+              </button>
+              <button
+                className={`font-option-btn ${settings.readingMode === 'scrolled' ? 'active' : ''}`}
+                onClick={() => updateSetting('readingMode', 'scrolled')}
+              >
+                <ScrollText size={14} style={{ marginRight: '4px' }} />
+                Scroll Contínuo
+              </button>
             </div>
-          )}
+          </div>
 
           {/* Font Family Selection */}
           <div className="apple-settings-section">
-            <span className="apple-section-label">Tipografia</span>
-            <div className="font-options-grid">
-              {['Literata', 'Merriweather', 'Inter', 'Georgia'].map(font => (
+            <span className="apple-section-label">Fonte Tipográfica</span>
+            <div className="font-options-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+              {AVAILABLE_FONTS.map(font => (
                 <button
-                  key={font}
-                  className={`font-option-btn ${settings.fontFamily === font ? 'active' : ''}`}
-                  onClick={() => updateSetting('fontFamily', font)}
+                  key={font.id}
+                  className={`font-option-btn ${settings.fontFamily === font.id ? 'active' : ''}`}
+                  onClick={() => updateSetting('fontFamily', font.id)}
+                  style={{ fontFamily: font.id, fontSize: '0.82rem' }}
                 >
-                  {font}
+                  {font.name}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Font Size Sliders */}
+          {/* Font Size Sliders & Step Buttons */}
           <div className="apple-settings-section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span className="apple-section-label">Tamanho do Texto</span>
-              <span style={{ fontSize: '0.78rem', color: 'var(--reader-muted)', fontFamily: 'var(--font-mono)' }}>{settings.fontSize}px</span>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--accent-primary-light)', fontFamily: 'var(--font-mono)' }}>
+                {settings.fontSize}px
+              </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
               <button 
                 className="chip-btn" 
                 onClick={() => updateSetting('fontSize', Math.max(12, settings.fontSize - 2))}
+                style={{ width: '42px', height: '34px', fontWeight: 700 }}
+                title="Diminuir texto"
               >
                 A-
               </button>
               <input 
                 type="range" 
                 min="12" 
-                max="32" 
+                max="36" 
+                step="1"
                 value={settings.fontSize}
                 onChange={(e) => updateSetting('fontSize', Number(e.target.value))}
-                style={{ flex: 1, accentColor: 'var(--accent-primary)' }}
+                style={{ flex: 1, accentColor: 'var(--accent-primary)', cursor: 'pointer' }}
               />
               <button 
                 className="chip-btn" 
-                onClick={() => updateSetting('fontSize', Math.min(32, settings.fontSize + 2))}
+                onClick={() => updateSetting('fontSize', Math.min(36, settings.fontSize + 2))}
+                style={{ width: '42px', height: '34px', fontWeight: 700 }}
+                title="Aumentar texto"
               >
                 A+
               </button>
+            </div>
+          </div>
+
+          {/* Line Height Selector */}
+          <div className="apple-settings-section">
+            <span className="apple-section-label">Espaçamento Entre Linhas</span>
+            <div className="font-options-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+              {[
+                { val: 1.4, label: 'Compacto' },
+                { val: 1.65, label: 'Padrão' },
+                { val: 1.9, label: 'Amplo' }
+              ].map(lh => (
+                <button
+                  key={lh.val}
+                  className={`font-option-btn ${settings.lineHeight === lh.val ? 'active' : ''}`}
+                  onClick={() => updateSetting('lineHeight', lh.val)}
+                >
+                  {lh.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -817,3 +1032,5 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
     </div>
   );
 }
+
+export default ReaderModal;

@@ -2,10 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { CURATED_COLLECTIONS } from './data/curatedBooks.js';
-import { searchOpenLibrary } from './resolvers/openLibrary.js';
-import { searchGutendex } from './resolvers/gutendex.js';
 import { searchAnnasArchive, resolveAnnaDownloadUrl } from './resolvers/annasResolver.js';
-import { searchLibgen } from './resolvers/libgenResolver.js';
 
 const app = express();
 
@@ -27,7 +24,7 @@ router.get('/curated', (req, res) => {
   });
 });
 
-// Unified Search Endpoint (Prioritizes Anna's Archive / Libgen, Portuguese, EPUB & aggregated sources)
+// Exclusive Anna's Archive Search Endpoint
 router.get('/search', async (req, res) => {
   const query = req.query.q;
   const lang = req.query.lang || 'all';
@@ -41,63 +38,33 @@ router.get('/search', async (req, res) => {
     });
   }
 
-  console.log(`[API /search] Incoming query: "${query}" (lang: ${lang}, format: ${format})`);
+  console.log(`[API /search] Exclusive Anna's Archive query: "${query}" (lang: ${lang}, format: ${format})`);
   const queryLower = query.toLowerCase().trim();
 
-  // 1. Check curated books first
+  // 1. Check curated books first for exact title matches
   const allCuratedBooks = CURATED_COLLECTIONS.flatMap(c => c.books);
   const matchedCurated = allCuratedBooks.filter(book => 
     book.title.toLowerCase().includes(queryLower) ||
-    book.author.toLowerCase().includes(queryLower) ||
-    (book.genre && book.genre.toLowerCase().includes(queryLower))
+    book.author.toLowerCase().includes(queryLower)
   );
 
-  // 2. Concurrently search Anna's Archive/LibGen (HTTP), Puppeteer (if local), OpenLibrary, and Gutendex
   try {
-    const [libgenResults, annaResults, olResults, gutenResults] = await Promise.allSettled([
-      searchLibgen(query, format, lang),
-      searchAnnasArchive(query, format, lang),
-      searchOpenLibrary(query),
-      searchGutendex(query)
-    ]);
+    // 2. Query Anna's Archive exclusively
+    const annaBooks = await searchAnnasArchive(query, format, lang);
+    console.log(`[API /search] Anna's Archive returned ${annaBooks.length} books for "${query}"`);
 
-    const libgenBooks = libgenResults.status === 'fulfilled' ? (libgenResults.value || []) : [];
-    const annaBooks = annaResults.status === 'fulfilled' ? (annaResults.value || []) : [];
-    const olBooks = olResults.status === 'fulfilled' ? (olResults.value || []) : [];
-    const gutenBooks = gutenResults.status === 'fulfilled' ? (gutenResults.value || []) : [];
-
-    console.log(`[API /search] Results count: Anna/LibGen: ${libgenBooks.length}, AnnaPuppeteer: ${annaBooks.length}, OL: ${olBooks.length}, Guten: ${gutenBooks.length}`);
-
-    // Build cover lookup map from OpenLibrary & Gutenberg to enrich Anna's Archive covers
-    const coverLookup = new Map();
-    [...allCuratedBooks, ...olBooks, ...gutenBooks].forEach(b => {
-      if (b.cover && !b.cover.includes('placeholder')) {
-        const norm = b.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
-        if (!coverLookup.has(norm)) {
-          coverLookup.set(norm, b.cover);
-        }
-      }
-    });
-
-    // Attach high-res covers to Anna/Libgen books if available
-    libgenBooks.forEach(b => {
-      const norm = b.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
-      if (coverLookup.has(norm)) {
-        b.cover = coverLookup.get(norm);
-      }
-    });
-
-    // Combine all results with priority: Curated -> Anna's Archive / LibGen -> Gutenberg -> OpenLibrary
+    // Combine results: Curated matches (if any) -> Anna's Archive
     const combined = [...matchedCurated];
     const seenTitles = new Set(matchedCurated.map(b => b.title.toLowerCase().trim()));
 
-    const addIfNew = (book) => {
+    annaBooks.forEach(book => {
       if (!book || !book.title) return;
       const normalizedTitle = book.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 25);
       if (!seenTitles.has(normalizedTitle) && !seenTitles.has(book.id)) {
         seenTitles.add(normalizedTitle);
         seenTitles.add(book.id);
         
+        book.source = "Anna's Archive";
         book.format = book.format || 'epub';
         book.language = book.language || 'pt';
         if (!book.badge) {
@@ -108,12 +75,7 @@ router.get('/search', async (req, res) => {
           combined.push(book);
         }
       }
-    };
-
-    libgenBooks.forEach(addIfNew);
-    annaBooks.forEach(addIfNew);
-    gutenBooks.forEach(addIfNew);
-    olBooks.forEach(addIfNew);
+    });
 
     // Sort with highest priority to Portuguese books first, then EPUB format
     combined.sort((a, b) => {
@@ -136,7 +98,7 @@ router.get('/search', async (req, res) => {
       results: combined
     });
   } catch (err) {
-    console.error('Search aggregation error:', err.message);
+    console.error(`[API /search] Anna's Archive search error:`, err.message);
     res.json({
       query,
       count: matchedCurated.length,
@@ -145,7 +107,7 @@ router.get('/search', async (req, res) => {
   }
 });
 
-// Download & Stream Proxy with HTTP Range Requests, Chunked Streaming & Auto-Recovery
+// Exclusive Anna's Archive Download & Stream Proxy
 router.get('/download', async (req, res) => {
   let fileUrl = req.query.url;
   const bookId = req.query.id;
@@ -158,7 +120,7 @@ router.get('/download', async (req, res) => {
 
   console.log(`[Stream Proxy] Request to download: ${fileUrl} (id: ${bookId}, title: ${title || 'N/A'})`);
 
-  // 1. If this is an Anna's Archive / Libgen book, resolve the direct download key link
+  // 1. Resolve MD5 key download link on Anna's Archive mirrors
   const md5Match = (fileUrl || '').match(/md5\/([a-f0-9]{32})/i) || 
                    (fileUrl || '').match(/md5=([a-f0-9]{32})/i) || 
                    (bookId || '').match(/anna_([a-f0-9]{32})/i);
@@ -173,7 +135,7 @@ router.get('/download', async (req, res) => {
     }
   }
 
-  // 2. Build list of URLs to try
+  // 2. Build list of mirror URLs
   let fallbacks = [];
   if (bookId) {
     const allCurated = CURATED_COLLECTIONS.flatMap(c => c.books);
@@ -198,18 +160,18 @@ router.get('/download', async (req, res) => {
     }
   }
 
-  // 3. Try primary URLs
+  // 3. Try primary Anna mirrors
   for (let i = 0; i < urlsToTry.length; i++) {
     const currentUrl = urlsToTry[i];
     const streamed = await tryStreamUrl(currentUrl, rangeHeader, res);
     if (streamed) return;
   }
 
-  // 4. AUTO-RECOVERY: If primary URL failed (e.g. 401 on archive.org or broken mirror), auto-search Anna/LibGen by Title!
+  // 4. Auto-recovery by title across Anna's Archive
   if (title && title.trim().length > 2) {
-    console.log(`[Stream Proxy] Primary source failed. Initiating auto-recovery search on Anna/LibGen for: "${title}"...`);
+    console.log(`[Stream Proxy] Primary mirror failed. Auto-recovering across Anna's Archive for: "${title}"...`);
     try {
-      const candidates = await searchLibgen(title, 'epub');
+      const candidates = await searchAnnasArchive(title, 'epub', 'all');
       for (const cand of candidates) {
         if (cand.md5) {
           console.log(`[Stream Proxy] Auto-recovery trying candidate MD5: ${cand.md5} (${cand.title})...`);
@@ -217,7 +179,7 @@ router.get('/download', async (req, res) => {
           if (candUrl) {
             const streamed = await tryStreamUrl(candUrl, rangeHeader, res);
             if (streamed) {
-              console.log(`🎉 [Stream Proxy] Auto-recovery SUCCESS with candidate: ${cand.title}`);
+              console.log(`🎉 [Stream Proxy] Auto-recovery SUCCESS: ${cand.title}`);
               return;
             }
           }
@@ -229,7 +191,7 @@ router.get('/download', async (req, res) => {
   }
 
   res.status(502).json({ 
-    error: 'Não foi possível baixar este livro das fontes atuais. Tente outra edição disponível no acervo.',
+    error: 'Não foi possível baixar este livro no Anna\'s Archive no momento. Tente outra edição disponível.',
     url: fileUrl 
   });
 });
