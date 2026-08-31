@@ -197,6 +197,11 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
     settingsRef.current = settings;
   }, [settings]);
 
+  const onProgressUpdateRef = useRef(onProgressUpdate);
+  useEffect(() => {
+    onProgressUpdateRef.current = onProgressUpdate;
+  }, [onProgressUpdate]);
+
   // Load saved settings
   useEffect(() => {
     getReaderSettings().then(saved => {
@@ -262,20 +267,18 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
     });
   }, [applyStylesToRendition]);
 
-  // Fast Navigation Actions
+  // Fast Navigation Actions (Stable callbacks)
   const handleNextPage = useCallback(() => {
-    if (loading || error || !renditionRef.current) return;
-    if (settings.readingMode === 'paginated') {
+    if (renditionRef.current && settingsRef.current.readingMode === 'paginated') {
       renditionRef.current.next();
     }
-  }, [loading, error, settings.readingMode]);
+  }, []);
 
   const handlePrevPage = useCallback(() => {
-    if (loading || error || !renditionRef.current) return;
-    if (settings.readingMode === 'paginated') {
+    if (renditionRef.current && settingsRef.current.readingMode === 'paginated') {
       renditionRef.current.prev();
     }
-  }, [loading, error, settings.readingMode]);
+  }, []);
 
   // Handle clicking inside the reader or iframe
   const handleReaderInteraction = useCallback((clickX, width) => {
@@ -296,7 +299,12 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
     }
   }, [handlePrevPage, handleNextPage]);
 
-  // Main Initialize ePub Reader effect
+  const handleReaderInteractionRef = useRef(handleReaderInteraction);
+  useEffect(() => {
+    handleReaderInteractionRef.current = handleReaderInteraction;
+  }, [handleReaderInteraction]);
+
+  // Main Initialize ePub Reader effect (Only runs when book or layout mode changes!)
   useEffect(() => {
     let isMounted = true;
 
@@ -403,7 +411,9 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
               doc.addEventListener('click', (e) => {
                 const clickX = e.clientX;
                 const width = window.innerWidth;
-                handleReaderInteraction(clickX, width);
+                if (handleReaderInteractionRef.current) {
+                  handleReaderInteractionRef.current(clickX, width);
+                }
               });
             }
           } catch (e) {
@@ -483,8 +493,8 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             chapter: currentChapter
           });
 
-          if (onProgressUpdate) {
-            onProgressUpdate(book.id, percent);
+          if (onProgressUpdateRef.current) {
+            onProgressUpdateRef.current(book.id, percent);
           }
         });
 
@@ -508,7 +518,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         try { bookInstanceRef.current.destroy(); } catch (e) {}
       }
     };
-  }, [book, settings.readingMode, settings.pageSpread, applyStylesToRendition, handleReaderInteraction]);
+  }, [book?.id, settings.readingMode, settings.pageSpread]);
 
   // Screen click handler on outer area
   const handleViewportAreaClick = (e) => {
