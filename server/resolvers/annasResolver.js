@@ -1,8 +1,22 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import fs from 'fs';
+import https from 'https';
 
-const ANNA_MIRRORS = [
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false
+});
+
+// Anna's Archive Direct Search Mirrors
+const ANNAS_SEARCH_MIRRORS = [
+  'https://annas-archive.is',
+  'https://annas-archive.li',
+  'https://annas-archive.pm',
+  'https://annas-archive.gs',
+  'https://annas-archive.pk'
+];
+
+// High-speed file host mirrors for key resolution and direct binary downloads
+const DOWNLOAD_MIRRORS = [
   'https://libgen.li',
   'https://libgen.gs',
   'https://libgen.vg',
@@ -10,225 +24,245 @@ const ANNA_MIRRORS = [
   'https://libgen.rocks'
 ];
 
-const CHROME_PATH = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-let sharedBrowser = null;
-let isInitializing = false;
-
-async function getSharedBrowser() {
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || !fs.existsSync(CHROME_PATH)) {
-    return null;
-  }
-  if (sharedBrowser && sharedBrowser.connected) {
-    return sharedBrowser;
-  }
-  if (isInitializing) {
-    while (isInitializing) {
-      await new Promise(r => setTimeout(r, 200));
-    }
-    if (sharedBrowser && sharedBrowser.connected) return sharedBrowser;
-  }
-
-  isInitializing = true;
-  try {
-    const { default: puppeteer } = await import('puppeteer-extra');
-    const { default: StealthPlugin } = await import('puppeteer-extra-plugin-stealth');
-    puppeteer.use(StealthPlugin());
-
-    console.log('[Anna Resolver] Launching local Chrome for secondary fallback...');
-    sharedBrowser = await puppeteer.launch({
-      executablePath: CHROME_PATH,
-      headless: false,
-      ignoreDefaultArgs: ['--enable-automation'],
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--window-size=1280,800',
-        '--window-position=-3000,-3000'
-      ]
-    });
-    return sharedBrowser;
-  } catch (err) {
-    console.warn('[Anna Resolver] Chrome fallback unavailable:', err.message);
-    return null;
-  } finally {
-    isInitializing = false;
-  }
-}
-
 /**
- * 100% Exclusive Anna's Archive search resolver:
- * Queries decentralized Anna's Archive index mirrors via HTTP in < 1 second.
+ * Direct Anna's Archive search resolver:
+ * Matches Anna's Archive's website search engine with typo-tolerance, full metadata & covers.
  */
 export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
   if (!query || !query.trim()) return [];
+  const cleanQ = query.trim();
 
-  console.log(`[Anna's Archive] Searching exclusively in Anna's Archive for: "${query}" (format: ${format}, lang: ${lang})`);
+  console.log(`[Anna's Archive] Searching Anna's Archive index for: "${cleanQ}" (format: ${format}, lang: ${lang})`);
 
-  // 1. Fast HTTP search across decentralized Anna index mirrors
-  for (const mirror of ANNA_MIRRORS) {
+  let allResults = [];
+  const seenIds = new Set();
+
+  // 1. Direct Search on Anna's Archive Mirrors
+  for (const mirror of ANNAS_SEARCH_MIRRORS) {
     try {
-      const searchUrl = `${mirror}/index.php?req=${encodeURIComponent(query)}&columns%5B%5D=t&columns%5B%5D=a&objects%5B%5D=f&topics%5B%5D=l&topics%5B%5D=f&res=50`;
+      const searchUrl = `${mirror}/search?q=${encodeURIComponent(cleanQ)}`;
       
       const response = await axios.get(searchUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
         },
-        timeout: 7000
+        httpsAgent,
+        timeout: 8000
       });
 
-      if (!response.data || typeof response.data !== 'string') continue;
+      if (!response.data || typeof response.data !== 'string' || response.data.length < 3000) {
+        continue;
+      }
 
       const $ = cheerio.load(response.data);
-      const results = [];
-      const seenMd5s = new Set();
+      const mirrorResults = [];
 
-      $('table#tablelibgen tbody tr, table.table tbody tr').each((i, el) => {
-        const tds = $(el).find('td');
-        if (tds.length < 8) return;
-
-        const titleLink = tds.eq(0).find('a').first();
-        const rawTitle = titleLink.text().trim();
-        const href = titleLink.attr('href') || '';
+      $('h3').each((i, el) => {
+        const titleLink = $(el).find('a').first();
+        const rawTitle = titleLink.text().replace(/\s+/g, ' ').trim();
+        const href = titleLink.attr('href') || $(el).closest('a').attr('href') || '';
         
-        const rawAuthor = tds.eq(1).text().trim() || 'Autor Desconhecido';
-        const yearStr = tds.eq(3).text().trim();
-        const year = parseInt(yearStr, 10) || null;
-        const rawLang = tds.eq(4).text().trim().toLowerCase();
-        const sizeStr = tds.eq(6).text().trim();
-        const fileExt = tds.eq(7).text().trim().toLowerCase();
+        if (!rawTitle || rawTitle.length < 2) return;
 
-        // Extract MD5 from row HTML or links
-        const rowHtml = $(el).html() || '';
-        const md5Match = rowHtml.match(/md5=([a-f0-9]{32})/i) || href.match(/([a-f0-9]{32})/i);
-        const md5 = md5Match ? md5Match[1].toLowerCase() : null;
+        const container = $(el).closest('div.min-w-0, div.flex-1').parent();
+        const img = container.find('img').first().attr('src') || '';
+        
+        // Metadata text (Author, year, size, format, publisher)
+        const metaDivs = container.find('div.text-sm');
+        let authorAndMeta = metaDivs.first().text().replace(/\s+/g, ' ').trim();
+        let publisher = '';
+        metaDivs.each((_, m) => {
+          const txt = $(m).text().trim();
+          if (txt.toLowerCase().startsWith('publisher:')) {
+            publisher = txt.replace(/^publisher:\s*/i, '').trim();
+          }
+        });
 
-        if (!rawTitle || rawTitle.length < 2 || (md5 && seenMd5s.has(md5))) return;
-        if (md5) seenMd5s.add(md5);
+        const snippet = container.find('p.text-sm').text().replace(/\s+/g, ' ').trim();
 
-        // Clean up title (remove trailing tags or ISBN lines)
-        const cleanTitle = rawTitle.replace(/\s+/g, ' ').replace(/\d{10,13}.*$/, '').trim();
+        // Extract metadata parts: author · year · format/size · catalog
+        const parts = authorAndMeta.split('·').map(p => p.trim());
+        let author = parts[0] && !parts[0].toLowerCase().includes('catalog') ? parts[0] : 'Autor Desconhecido';
+        if (author.includes(';')) author = author.split(';')[0].trim();
+        
+        let fileExt = 'epub';
+        let size = '2.0 MB';
+        let year = null;
+
+        for (const p of parts) {
+          const num = parseInt(p, 10);
+          if (num > 1500 && num < 2030 && !year) year = num;
+          if (/\b(epub|pdf|mobi|azw3|djvu)\b/i.test(p)) {
+            const match = p.match(/\b(epub|pdf|mobi|azw3|djvu)\b/i);
+            if (match) fileExt = match[1].toLowerCase();
+          }
+          if (/\b(\d+(\.\d+)?\s*(mb|kb|gb|b))\b/i.test(p)) {
+            const match = p.match(/\b(\d+(\.\d+)?\s*(mb|kb|gb|b))\b/i);
+            if (match) size = match[1].toUpperCase();
+          }
+        }
 
         // Language detection
         let bookLang = 'en';
-        if (rawLang.includes('portug') || rawLang === 'pt' || rawLang.includes('brazil') || rawLang.includes('por')) {
+        const lowerMeta = (rawTitle + ' ' + authorAndMeta + ' ' + snippet).toLowerCase();
+        if (lowerMeta.includes('portug') || lowerMeta.includes('brasil') || lowerMeta.includes('brazil') || lowerMeta.includes('em português')) {
           bookLang = 'pt';
-        } else if (rawLang.includes('span') || rawLang === 'es') {
+        } else if (lowerMeta.includes('span') || lowerMeta.includes('español') || lowerMeta.includes('espanhol')) {
           bookLang = 'es';
-        } else if (rawLang.includes('fren') || rawLang === 'fr') {
+        } else if (lowerMeta.includes('french') || lowerMeta.includes('français')) {
           bookLang = 'fr';
-        } else if (rawLang.includes('germ') || rawLang === 'de') {
+        } else if (lowerMeta.includes('german') || lowerMeta.includes('deutsch')) {
           bookLang = 'de';
-        } else if (rawLang.includes('ital') || rawLang === 'it') {
-          bookLang = 'it';
         }
 
-        // Format filter
-        const isFormatMatch = format === 'all' || fileExt === format || (format === 'epub' && (fileExt === 'epub' || fileExt === 'pdf'));
-        if (!isFormatMatch) return;
+        let md5 = null;
+        const md5Match = href.match(/\/md5\/([a-f0-9]{32})/i) || href.match(/([a-f0-9]{32})/i);
+        if (md5Match) md5 = md5Match[1].toLowerCase();
 
-        // Language filter
-        if (lang !== 'all' && bookLang !== lang) return;
+        const uniqueKey = md5 || href || rawTitle.toLowerCase();
+        if (seenIds.has(uniqueKey)) return;
+        seenIds.add(uniqueKey);
 
-        // Clean Author
-        let cleanAuthor = rawAuthor.replace(/\s+/g, ' ').replace(/;$/, '').trim();
-        if (cleanAuthor.includes(';')) {
-          cleanAuthor = cleanAuthor.split(';')[0].trim();
-        }
+        const fullHref = href.startsWith('http') ? href : `${mirror}${href.startsWith('/') ? '' : '/'}${href}`;
+        const downloadUrl = md5 ? `https://annas-archive.is/md5/${md5}` : fullHref;
 
-        const downloadUrl = md5 
-          ? `https://annas-archive.gl/md5/${md5}` 
-          : `https://libgen.li/${href}`;
-
-        // Smart dynamic cover (high-res placeholder / openlibrary cover match)
-        const cover = `https://covers.openlibrary.org/b/id/12717088-L.jpg`;
-        const sizeDisplay = sizeStr ? sizeStr.toUpperCase() : '2.0 MB';
-
-        // Score relevance & Portuguese Prioritization
+        // Score relevance
         let score = 50;
         if (bookLang === 'pt') score += 100;
-        if (fileExt === 'epub') score += 40;
-        if (cleanTitle.toLowerCase().includes(query.toLowerCase())) score += 30;
+        if (fileExt === 'epub') score += 30;
+        if (rawTitle.toLowerCase().includes(cleanQ.toLowerCase())) score += 50;
 
-        results.push({
-          id: `anna_${md5 || Math.random().toString(36).substring(7)}`,
+        mirrorResults.push({
+          id: `anna_${md5 || Buffer.from(rawTitle).toString('hex').substring(0, 16)}`,
           md5: md5,
-          title: cleanTitle,
-          author: cleanAuthor,
-          cover: cover,
+          title: rawTitle,
+          author: author,
+          year: year,
+          publisher: publisher,
+          cover: img || `https://covers.openlibrary.org/b/id/12717088-L.jpg`,
+          format: fileExt === 'pdf' ? 'pdf' : 'epub',
+          size: size,
+          language: bookLang,
           downloadUrl: downloadUrl,
           source: "Anna's Archive",
+          badge: `${fileExt.toUpperCase()} • ${size}`,
           rating: 4.8 + Math.round(Math.random() * 2) / 10,
-          year: year,
-          language: bookLang,
-          format: fileExt === 'pdf' ? 'pdf' : 'epub',
-          size: sizeDisplay,
-          badge: `${fileExt.toUpperCase()} • ${sizeDisplay}`,
-          description: `Disponível para leitura instantânea no navegador através do acervo universal do Anna's Archive (MD5: ${md5 || 'N/A'}).`,
+          description: snippet || `Disponível para leitura instantânea no acervo oficial do Anna's Archive.`,
           score: score
         });
       });
 
-      if (results.length > 0) {
-        console.log(`[Anna's Archive] Found ${results.length} books on mirror ${mirror}!`);
-        return results;
+      if (mirrorResults.length > 0) {
+        console.log(`[Anna's Archive] Found ${mirrorResults.length} books on ${mirror}!`);
+        allResults = mirrorResults;
+        break;
       }
     } catch (err) {
-      console.warn(`[Anna's Archive] Mirror ${mirror} failed: ${err.message}`);
+      console.warn(`[Anna's Archive] Mirror ${mirror} notice:`, err.message);
     }
   }
 
-  // 2. Secondary fallback for local dev if Chrome is available
-  try {
-    const browser = await getSharedBrowser();
-    if (browser) {
-      const page = await browser.newPage();
-      await page.setViewport({ width: 1280, height: 800 });
-      const filterExt = format === 'all' ? '' : '&ext=epub';
-      const filterLang = lang === 'pt' ? '&lang=pt' : (lang === 'en' ? '&lang=en' : '');
-      const searchUrl = `https://annas-archive.gl/search?q=${encodeURIComponent(query)}${filterExt}${filterLang}`;
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
-      await page.waitForSelector('main a[href*="/md5/"], a[href*="/md5/"]', { timeout: 15000 });
-
-      const puppeteerResults = await page.evaluate((searchQuery) => {
-        const mapByMd5 = new Map();
-        document.querySelectorAll('a[href*="/md5/"]').forEach(a => {
-          const href = a.getAttribute('href');
-          const md5Match = href?.match(/md5\/([a-f0-9]{32})/i);
-          if (!md5Match) return;
-          const md5 = md5Match[1];
-          const text = a.innerText.replace(/\s+/g, ' ').trim();
-          if (text && text.length > 1) {
-            mapByMd5.set(md5, {
-              id: `anna_${md5}`,
-              md5: md5,
-              title: text,
-              author: "Anna's Archive",
-              cover: a.querySelector('img')?.getAttribute('src') || null,
-              downloadUrl: `https://annas-archive.gl/md5/${md5}`,
-              source: "Anna's Archive",
-              rating: 4.9,
-              year: null,
-              language: 'pt',
-              format: 'epub',
-              size: '2.0 MB',
-              badge: "EPUB • 2 MB",
-              description: `Disponível no acervo Anna's Archive via MD5: ${md5}.`,
-              score: 90
-            });
-          }
+  // 2. Secondary fallback / enrichment from decentralized mirrors if needed
+  if (allResults.length === 0) {
+    console.log(`[Anna's Archive] Trying decentralized search mirrors for: "${cleanQ}"`);
+    for (const mirror of DOWNLOAD_MIRRORS) {
+      try {
+        const url = `${mirror}/index.php?req=${encodeURIComponent(cleanQ)}&res=50`;
+        const res = await axios.get(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+          timeout: 6000
         });
-        return Array.from(mapByMd5.values());
-      }, query);
 
-      await page.close();
-      return puppeteerResults;
+        if (!res.data || typeof res.data !== 'string') continue;
+
+        const $ = cheerio.load(res.data);
+        $('table#tablelibgen tbody tr, table.table tbody tr').each((i, el) => {
+          const tds = $(el).find('td');
+          if (tds.length < 8) return;
+
+          const titleLink = tds.eq(0).find('a').first();
+          const rawTitle = titleLink.text().trim();
+          const href = titleLink.attr('href') || '';
+          const rawAuthor = tds.eq(1).text().trim() || 'Autor Desconhecido';
+          const yearStr = tds.eq(3).text().trim();
+          const year = parseInt(yearStr, 10) || null;
+          const rawLang = tds.eq(4).text().trim().toLowerCase();
+          const sizeStr = tds.eq(6).text().trim();
+          const fileExt = tds.eq(7).text().trim().toLowerCase();
+
+          const rowHtml = $(el).html() || '';
+          const md5Match = rowHtml.match(/md5=([a-f0-9]{32})/i) || href.match(/([a-f0-9]{32})/i);
+          const md5 = md5Match ? md5Match[1].toLowerCase() : null;
+
+          if (!rawTitle || rawTitle.length < 2) return;
+          const uniqueKey = md5 || rawTitle.toLowerCase();
+          if (seenIds.has(uniqueKey)) return;
+          seenIds.add(uniqueKey);
+
+          let bookLang = 'en';
+          if (rawLang.includes('portug') || rawLang === 'pt' || rawLang.includes('brazil')) bookLang = 'pt';
+          else if (rawLang.includes('span') || rawLang === 'es') bookLang = 'es';
+
+          let cleanAuthor = rawAuthor.replace(/\s+/g, ' ').replace(/;$/, '').trim();
+          if (cleanAuthor.includes(';')) cleanAuthor = cleanAuthor.split(';')[0].trim();
+
+          const cleanTitle = rawTitle.replace(/\s+/g, ' ').replace(/\d{10,13}.*$/, '').trim();
+
+          let score = 40;
+          if (bookLang === 'pt') score += 100;
+          if (fileExt === 'epub') score += 30;
+
+          allResults.push({
+            id: `anna_${md5 || Buffer.from(cleanTitle).toString('hex').substring(0, 16)}`,
+            md5: md5,
+            title: cleanTitle,
+            author: cleanAuthor,
+            year: year,
+            publisher: '',
+            cover: `https://covers.openlibrary.org/b/id/12717088-L.jpg`,
+            format: fileExt === 'pdf' ? 'pdf' : 'epub',
+            size: sizeStr ? sizeStr.toUpperCase() : '2.0 MB',
+            language: bookLang,
+            downloadUrl: md5 ? `https://annas-archive.is/md5/${md5}` : `${mirror}/${href}`,
+            source: "Anna's Archive",
+            badge: `${fileExt.toUpperCase()} • ${sizeStr ? sizeStr.toUpperCase() : '2 MB'}`,
+            rating: 4.8,
+            description: `Disponível no acervo universal Anna's Archive (MD5: ${md5 || 'N/A'}).`,
+            score: score
+          });
+        });
+
+        if (allResults.length > 0) break;
+      } catch (err) {
+        console.warn(`[Anna's Archive] Fallback mirror ${mirror} error:`, err.message);
+      }
     }
-  } catch (e) {
-    console.warn('[Anna Resolver] Chrome fallback error:', e.message);
   }
 
-  return [];
+  // Filter by requested format if needed
+  let filtered = allResults;
+  if (format && format !== 'all') {
+    const fmt = format.toLowerCase();
+    const exact = filtered.filter(b => b.format === fmt);
+    if (exact.length > 0) {
+      filtered = exact;
+    }
+  }
+
+  // Filter by language if specified
+  if (lang && lang !== 'all') {
+    const langExact = filtered.filter(b => b.language === lang);
+    if (langExact.length > 0) {
+      filtered = langExact;
+    }
+  }
+
+  // Sort results: Portuguese first, then highest score
+  filtered.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  return filtered;
 }
 
 /**
@@ -238,7 +272,7 @@ export async function resolveAnnaDownloadUrl(md5, title = null) {
   if (!md5) return null;
   console.log(`[Anna Resolver] Resolving resilient download mirror for MD5: ${md5} (title: ${title || 'N/A'})`);
 
-  for (const dom of ANNA_MIRRORS) {
+  for (const dom of DOWNLOAD_MIRRORS) {
     const urlsToTry = [
       `${dom}/ads.php?md5=${md5}`,
       `${dom}/get.php?md5=${md5}`
@@ -248,7 +282,7 @@ export async function resolveAnnaDownloadUrl(md5, title = null) {
       try {
         const res = await axios.get(pageUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
           },
           timeout: 4000
@@ -281,7 +315,7 @@ export async function resolveAnnaDownloadUrl(md5, title = null) {
       for (const cand of candidates) {
         if (cand.md5 && cand.md5.toLowerCase() !== md5.toLowerCase()) {
           console.log(`[Anna Resolver] Trying alternative edition MD5: ${cand.md5} (${cand.title})...`);
-          for (const dom of ANNA_MIRRORS.slice(0, 3)) {
+          for (const dom of DOWNLOAD_MIRRORS.slice(0, 3)) {
             try {
               const res = await axios.get(`${dom}/ads.php?md5=${cand.md5}`, {
                 headers: { 'User-Agent': 'Mozilla/5.0' },

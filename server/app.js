@@ -59,7 +59,7 @@ router.get('/search', async (req, res) => {
 
     annaBooks.forEach(book => {
       if (!book || !book.title) return;
-      const normalizedTitle = book.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 25);
+      const normalizedTitle = book.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30);
       if (!seenTitles.has(normalizedTitle) && !seenTitles.has(book.id)) {
         seenTitles.add(normalizedTitle);
         seenTitles.add(book.id);
@@ -68,26 +68,22 @@ router.get('/search', async (req, res) => {
         book.format = book.format || 'epub';
         book.language = book.language || 'pt';
         if (!book.badge) {
-          book.badge = book.format === 'pdf' ? 'PDF • 45 MB' : 'EPUB • 1.5 MB';
+          book.badge = `${book.format.toUpperCase()} • ${book.size || '2.0 MB'}`;
         }
 
-        if (lang === 'all' || book.language === lang) {
-          combined.push(book);
-        }
+        combined.push(book);
       }
     });
 
-    // Sort with highest priority to Portuguese books first, then EPUB format
+    // Sort with highest priority to Portuguese books first, then exact matches
     combined.sort((a, b) => {
-      const aIsPt = a.language === 'pt';
-      const bIsPt = b.language === 'pt';
-      if (aIsPt && !bIsPt) return -1;
-      if (!aIsPt && bIsPt) return 1;
+      const aIsPt = a.language === 'pt' ? 1 : 0;
+      const bIsPt = b.language === 'pt' ? 1 : 0;
+      if (aIsPt !== bIsPt) return bIsPt - aIsPt;
 
-      const aIsEpub = a.format === 'epub';
-      const bIsEpub = b.format === 'epub';
-      if (aIsEpub && !bIsEpub) return -1;
-      if (!aIsEpub && bIsEpub) return 1;
+      const aIsEpub = a.format === 'epub' ? 1 : 0;
+      const bIsEpub = b.format === 'epub' ? 1 : 0;
+      if (aIsEpub !== bIsEpub) return bIsEpub - aIsEpub;
 
       return (b.score || 0) - (a.score || 0);
     });
