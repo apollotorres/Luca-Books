@@ -8,6 +8,7 @@ import { LibraryView } from './components/LibraryView';
 import { SearchView } from './components/SearchView';
 import { ImportModal } from './components/ImportModal';
 import { ReaderModal } from './components/ReaderModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { 
   getLibraryBooks, 
   requestStoragePersistence, 
@@ -250,6 +251,9 @@ export function App() {
           onProgressUpdate={handleProgressUpdate}
         />
       )}
+
+      {/* PWA Install Prompt & iOS Guide */}
+      <PWAInstallBanner />
     </div>
   );
 }

@@ -1,17 +1,59 @@
 {
-  "name": "Lumina - Spotify dos Livros",
-  "short_name": "Lumina",
-  "description": "Encontre qualquer livro e leia instantaneamente em um app moderno, leve e 100% offline.",
+  "name": "Luca Books - Biblioteca Digital",
+  "short_name": "Luca Books",
+  "description": "Busque qualquer livro e leia instantaneamente em um leitor digital elegante, rápido e 100% offline.",
   "start_url": "/",
+  "id": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0c0d0e",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#0a0a0c",
   "theme_color": "#10b981",
+  "orientation": "any",
+  "categories": ["books", "education", "lifestyle", "productivity"],
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='%2310b981'><rect width='512' height='512' rx='128' fill='%23151719'/><path fill='%2310b981' d='M256 64L64 160l192 96 192-96-192-96zm-192 192l192 96 192-96M64 352l192 96 192-96'/></svg>",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Minha Biblioteca",
+      "short_name": "Biblioteca",
+      "description": "Abrir seus livros salvos offline",
+      "url": "/?tab=library",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Explorar Livros",
+      "short_name": "Explorar",
+      "description": "Pesquisar no acervo digital",
+      "url": "/?tab=explore",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
