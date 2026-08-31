@@ -89,6 +89,7 @@ function generateReaderCss(settings) {
       color: ${theme.body.color} !important;
       margin: 0 !important;
       padding: 0 !important;
+      height: ${isScrolled ? 'auto' : '100%'} !important;
     }
 
     body {
@@ -101,7 +102,9 @@ function generateReaderCss(settings) {
       -moz-osx-font-smoothing: grayscale !important;
       text-rendering: optimizeLegibility !important;
       margin: 0 !important;
-      padding: ${isScrolled ? '36px 24px 120px 24px' : '0 24px'} !important;
+      padding: ${isScrolled ? '24px 20px 64px 20px' : '0 24px'} !important;
+      height: ${isScrolled ? 'auto' : '100%'} !important;
+      box-sizing: border-box !important;
     }
 
     p, div, span, li, blockquote, em, strong, b, i, small, pre, code {
@@ -384,7 +387,8 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           width: '100%',
           height: '100%',
           spread: isDoublePage ? 'always' : 'never',
-          flow: isScrolled ? 'scrolled-doc' : 'paginated',
+          flow: isScrolled ? 'scrolled' : 'paginated',
+          manager: isScrolled ? 'continuous' : 'default',
           allowScriptedContent: true
         };
 
@@ -541,7 +545,25 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           e.preventDefault();
           handlePrevPage();
         }
+      } else if (settings.readingMode === 'scrolled') {
+        const scroller = viewerRef.current?.querySelector('.epub-container, .epubjs-container') || viewerRef.current;
+        if (scroller) {
+          if (e.key === 'ArrowDown' || e.key === ' ') {
+            e.preventDefault();
+            scroller.scrollBy({ top: 320, behavior: 'smooth' });
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            scroller.scrollBy({ top: -320, behavior: 'smooth' });
+          } else if (e.key === 'PageDown') {
+            e.preventDefault();
+            scroller.scrollBy({ top: window.innerHeight * 0.75, behavior: 'smooth' });
+          } else if (e.key === 'PageUp') {
+            e.preventDefault();
+            scroller.scrollBy({ top: -window.innerHeight * 0.75, behavior: 'smooth' });
+          }
+        }
       }
+
       if (e.key === 'Escape') {
         if (showToc) setShowToc(false);
         else if (showSettings) setShowSettings(false);
