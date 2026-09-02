@@ -44,15 +44,21 @@ export async function searchBooksApi(query, lang = 'all', format = 'epub') {
 }
 
 // Download stream with real-time byte progress reporting
-export async function fetchBookEpubBinary(downloadUrl, bookId, title, onProgress) {
-  if (!downloadUrl && !bookId) throw new Error('Identificador do livro não fornecido.');
+export async function fetchBookEpubBinary(downloadUrl, bookId, title, onProgress, fallbackMd5s = []) {
+  if (!downloadUrl && !bookId && !title) throw new Error('Identificador do livro não fornecido.');
   
   const titleParam = title ? `&title=${encodeURIComponent(title)}` : '';
   const urlParam = downloadUrl ? `url=${encodeURIComponent(downloadUrl)}` : '';
   const idParam = bookId ? `&id=${encodeURIComponent(bookId)}` : '';
-  const proxyUrl = `${API_BASE}/download?${urlParam}${idParam}${titleParam}`;
+  const fallbacksParam = fallbackMd5s && fallbackMd5s.length > 0 ? `&fallbackMd5s=${encodeURIComponent(fallbackMd5s.join(','))}` : '';
+  
+  const proxyUrl = `${API_BASE}/download?${urlParam}${idParam}${titleParam}${fallbacksParam}`;
   console.log(`[Client API] Fetching EPUB via proxy: ${proxyUrl}`);
   
+  if (onProgress) {
+    onProgress(15, 0, 0, 'Localizando espelho de alta velocidade...');
+  }
+
   const response = await fetch(proxyUrl);
   if (!response.ok) {
     let errorDetail = 'Não foi possível carregar este livro no momento';
@@ -95,6 +101,21 @@ async function readStreamIntoBuffer(response, onProgress) {
   for (const chunk of chunks) {
     allBytes.set(chunk, offset);
     offset += chunk.length;
+  }
+
+  // Validate binary magic bytes:
+  // EPUB is a ZIP file starting with PK (0x50, 0x4B)
+  // PDF starts with %PDF (0x25, 0x50, 0x44, 0x46)
+  if (receivedLength < 100) {
+    throw new Error('Arquivo corrompido ou incompleto recebido do servidor.');
+  }
+
+  const isZip = allBytes[0] === 0x50 && allBytes[1] === 0x4B;
+  const isPdf = allBytes[0] === 0x25 && allBytes[1] === 0x50 && allBytes[2] === 0x44 && allBytes[3] === 0x46;
+
+  if (!isZip && !isPdf) {
+    console.warn('[Client API] Invalid non-book binary payload received');
+    throw new Error('Não foi possível obter uma cópia legível deste livro no momento. Tente outra edição.');
   }
 
   return allBytes.buffer;

@@ -30,7 +30,8 @@ import {
   getReadingProgress, 
   getReaderSettings, 
   saveReaderSettings, 
-  exportBookEpub 
+  exportBookEpub,
+  clearBookBinary
 } from '../services/db';
 import { fetchBookEpubBinary } from '../services/api';
 
@@ -173,6 +174,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
   const [downloadProgress, setDownloadProgress] = useState(12);
   const [downloadDetail, setDownloadDetail] = useState('Localizando espelhos de alta velocidade');
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const [currentChapter, setCurrentChapter] = useState('');
   const [progress, setProgress] = useState(0);
@@ -270,21 +272,32 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
     });
   }, [applyStylesToRendition]);
 
-  // Fast Navigation Actions (Stable callbacks)
+  // Fast Navigation Actions (Stable callbacks with crash guards)
   const handleNextPage = useCallback(() => {
+    if (loading) return;
     if (renditionRef.current && settingsRef.current.readingMode === 'paginated') {
-      renditionRef.current.next();
+      try {
+        renditionRef.current.next();
+      } catch (err) {
+        console.warn('[Reader] Next page notice:', err);
+      }
     }
-  }, []);
+  }, [loading]);
 
   const handlePrevPage = useCallback(() => {
+    if (loading) return;
     if (renditionRef.current && settingsRef.current.readingMode === 'paginated') {
-      renditionRef.current.prev();
+      try {
+        renditionRef.current.prev();
+      } catch (err) {
+        console.warn('[Reader] Prev page notice:', err);
+      }
     }
-  }, []);
+  }, [loading]);
 
   // Handle clicking inside the reader or iframe
   const handleReaderInteraction = useCallback((clickX, width) => {
+    if (loading) return;
     if (settingsRef.current.readingMode === 'paginated') {
       if (clickX < width * 0.22) {
         handlePrevPage();
@@ -300,7 +313,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
       setShowAppleMenu(false);
       setShowSettings(false);
     }
-  }, [handlePrevPage, handleNextPage]);
+  }, [loading, handlePrevPage, handleNextPage]);
 
   const handleReaderInteractionRef = useRef(handleReaderInteraction);
   useEffect(() => {
@@ -332,16 +345,17 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             book.title,
             (pct, received, total, customText) => {
               if (!isMounted) return;
-              if (pct !== null) {
+              if (pct !== null && total) {
                 const scaled = Math.min(85, Math.max(25, 25 + Math.round((pct * 0.6))));
                 setDownloadProgress(scaled);
                 const mb = (received / (1024 * 1024)).toFixed(1);
-                const totalMb = total ? (total / (1024 * 1024)).toFixed(1) : '?';
+                const totalMb = (total / (1024 * 1024)).toFixed(1);
                 setDownloadDetail(`${mb} MB de ${totalMb} MB (${pct}%)`);
               } else if (customText) {
                 setDownloadDetail(customText);
               }
-            }
+            },
+            book.fallbackMd5s || []
           );
           
           if (!isMounted) return;
@@ -504,6 +518,9 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
 
       } catch (err) {
         console.error('Error loading EPUB in reader:', err);
+        if (book?.id) {
+          try { await clearBookBinary(book.id); } catch (e) {}
+        }
         if (isMounted) {
           setError(`Não foi possível abrir o livro: ${err.message || 'Formato incompatível ou falha na conexão'}.`);
           setLoading(false);
@@ -522,10 +539,11 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         try { bookInstanceRef.current.destroy(); } catch (e) {}
       }
     };
-  }, [book?.id, settings.readingMode, settings.pageSpread]);
+  }, [book?.id, settings.readingMode, settings.pageSpread, retryCount]);
 
   // Screen click handler on outer area
   const handleViewportAreaClick = (e) => {
+    if (loading) return;
     if (e.target.closest('button') || e.target.closest('.apple-books-floating-menu') || e.target.closest('.apple-settings-popover') || e.target.closest('.apple-toc-modal-drawer')) {
       return;
     }
@@ -753,13 +771,24 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
               <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
                 {error}
               </p>
-              <button 
-                className="btn-primary" 
-                onClick={onClose}
-                style={{ marginTop: '8px' }}
-              >
-                Voltar ao Início
-              </button>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                <button 
+                  className="btn-secondary" 
+                  onClick={async () => {
+                    if (book?.id) await clearBookBinary(book.id);
+                    setError(null);
+                    setRetryCount(c => c + 1);
+                  }}
+                >
+                  Tentar Novamente
+                </button>
+                <button 
+                  className="btn-primary" 
+                  onClick={onClose}
+                >
+                  Voltar à Biblioteca
+                </button>
+              </div>
             </div>
           </div>
         )}
