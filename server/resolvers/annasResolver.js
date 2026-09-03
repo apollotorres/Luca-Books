@@ -1,28 +1,28 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import https from 'https';
+import { CURATED_COLLECTIONS } from '../data/curatedBooks.js';
 
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false
 });
 
-// Anna's Archive Direct Search Mirrors
-const ANNAS_SEARCH_MIRRORS = [
-  'https://annas-archive.is',
-  'https://annas-archive.li',
-  'https://annas-archive.pm',
-  'https://annas-archive.gs',
-  'https://annas-archive.pk'
-];
-
-// High-speed file host mirrors for key resolution and direct binary downloads
+// Decentralized mirror endpoints
 const DOWNLOAD_MIRRORS = [
   'https://libgen.li',
-  'https://libgen.gs',
   'https://libgen.vg',
-  'https://libgen.pm',
-  'https://libgen.rocks'
+  'https://libgen.gs',
+  'https://libgen.rocks',
+  'https://libgen.pm'
 ];
+
+/**
+ * Remove accents and special characters for broad search compatibility
+ */
+export function removeDiacritics(str) {
+  if (!str) return '';
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
 
 /**
  * Clean book title for search queries
@@ -41,22 +41,220 @@ export function cleanTitleForSearch(title) {
 }
 
 /**
+ * Search Internet Archive (Archive.org) for high-speed open access downloads (excluding locked CDL books)
+ */
+export async function searchArchiveOrg(query, lang = 'all') {
+  if (!query || !query.trim()) return [];
+  const cleanQ = cleanTitleForSearch(query);
+  const normalizedQ = removeDiacritics(cleanQ);
+
+  const words = normalizedQ.split(/\s+/).filter(w => w.length > 2 && !['para', 'com', 'que', 'dos', 'das', 'uma', 'uns', 'the', 'and', 'for'].includes(w.toLowerCase()));
+  const queriesToTry = [
+    normalizedQ,
+    words.length > 1 ? words.slice(0, 2).join(' ') : null
+  ].filter(Boolean);
+
+  for (const qText of queriesToTry) {
+    try {
+      const langFilter = lang === 'pt' ? 'AND (language:por OR language:Portuguese OR language:pt)' : '';
+      // Exclude access-restricted items, inlibrary loans and printdisabled locked scans
+      const url = `https://archive.org/advancedsearch.php?q=(${encodeURIComponent(qText)})+AND+mediatype:(texts)+AND+format:(EPUB+OR+Text+PDF+OR+PDF)+AND+-access-restricted-item:true+AND+-collection:inlibrary+AND+-collection:printdisabled+${langFilter}&fl[]=identifier,title,creator,year,language,description,downloads,item_size,format&sort[]=downloads+desc&rows=8&output=json`;
+
+      const res = await axios.get(url, { 
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        timeout: 4500 
+      });
+      
+      const docs = res.data?.response?.docs || [];
+      if (docs.length === 0) continue;
+
+      const results = [];
+      for (const doc of docs) {
+        if (!doc.identifier || !doc.title) continue;
+        if (doc.identifier.startsWith('isbn_') && doc.identifier.length > 15) continue; // Skip raw lending ISBN scans
+
+        const author = Array.isArray(doc.creator) ? doc.creator[0] : (doc.creator || 'Domínio Público');
+        const docFormats = Array.isArray(doc.format) ? doc.format : [doc.format || ''];
+        const hasEpub = docFormats.some(f => (f || '').toLowerCase().includes('epub') && !f.toLowerCase().includes('encrypted'));
+        const format = hasEpub ? 'epub' : 'pdf';
+
+        let docLang = 'en';
+        const rawDocLang = (doc.language || '').toLowerCase();
+        if (rawDocLang.includes('por') || rawDocLang.includes('pt') || rawDocLang.includes('brazil')) {
+          docLang = 'pt';
+        }
+
+        let score = 55;
+        if (docLang === 'pt') score += 80;
+        if (format === 'epub') score += 40;
+        if (doc.downloads && doc.downloads > 500) score += 20;
+
+        results.push({
+          id: `ia_${doc.identifier}`,
+          md5: null,
+          iaIdentifier: doc.identifier,
+          title: doc.title,
+          author: author,
+          year: parseInt(doc.year, 10) || null,
+          publisher: 'Internet Archive',
+          cover: `https://archive.org/services/img/${doc.identifier}`,
+          format: format,
+          size: format === 'epub' ? '2.5 MB' : '8.0 MB',
+          language: docLang,
+          downloadUrl: `https://archive.org/download/${doc.identifier}`,
+          source: 'Internet Archive',
+          badge: `${format.toUpperCase()} • Alta Velocidade`,
+          rating: 4.8 + Math.round(Math.random() * 2) / 10,
+          description: `Disponível para leitura instantânea no acervo universal do Internet Archive.`,
+          score: score,
+          fallbackMd5s: []
+        });
+      }
+
+      if (results.length > 0) return results;
+    } catch (e) {}
+  }
+
+  return [];
+}
+
+/**
+ * Resolve direct download binary URL from Internet Archive identifier (verifying open permissions)
+ */
+export async function resolveArchiveOrgEpub(identifier) {
+  if (!identifier) return null;
+  try {
+    const filesUrl = `https://archive.org/metadata/${identifier}`;
+    const res = await axios.get(filesUrl, { 
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 4000 
+    });
+
+    const isRestricted = res.data?.metadata?.['access-restricted-item'] === 'true' || 
+                         (res.data?.metadata?.collection || []).includes('inlibrary');
+    if (isRestricted) {
+      console.warn(`[Archive.org Resolver] Item ${identifier} is locked behind controlled lending.`);
+      return null;
+    }
+
+    const files = res.data?.files || [];
+    
+    // 1. Look for non-private, non-encrypted EPUB
+    const epub = files.find(f => 
+      f.name && 
+      f.name.toLowerCase().endsWith('.epub') && 
+      !f.name.includes('_sample') &&
+      f.private !== 'true' &&
+      f.private !== true &&
+      !f.format?.toLowerCase().includes('encrypted') &&
+      !f.format?.toLowerCase().includes('lcp')
+    );
+    if (epub) {
+      return `https://archive.org/download/${identifier}/${encodeURIComponent(epub.name)}`;
+    }
+
+    // 2. Secondary: Non-private, non-encrypted Text PDF
+    const textPdf = files.find(f => 
+      f.name && 
+      f.name.toLowerCase().endsWith('.pdf') && 
+      !f.name.includes('_thumb') && 
+      !f.name.includes('_text') &&
+      f.private !== 'true' &&
+      f.private !== true &&
+      !f.format?.toLowerCase().includes('encrypted') &&
+      !f.format?.toLowerCase().includes('acs')
+    );
+    if (textPdf) {
+      return `https://archive.org/download/${identifier}/${encodeURIComponent(textPdf.name)}`;
+    }
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Search Project Gutenberg via Gutendex
+ */
+export async function searchGutenberg(query) {
+  if (!query || !query.trim()) return [];
+  const cleanQ = cleanTitleForSearch(query);
+  const normalizedQ = removeDiacritics(cleanQ);
+
+  const words = normalizedQ.split(/\s+/).filter(w => w.length > 2 && !['para', 'com', 'que', 'dos', 'das', 'uma', 'uns', 'the', 'and', 'for'].includes(w.toLowerCase()));
+  const queriesToTry = [
+    normalizedQ,
+    words.length > 1 ? words.slice(0, 2).join(' ') : null
+  ].filter(Boolean);
+
+  for (const qText of queriesToTry) {
+    try {
+      const url = `https://gutendex.com/books/?search=${encodeURIComponent(qText)}`;
+      const res = await axios.get(url, { 
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        timeout: 4000 
+      });
+      const books = res.data?.results || [];
+      if (books.length === 0) continue;
+
+      return books.slice(0, 5).map(b => {
+        const epubUrl = b.formats['application/epub+zip'] || 
+                        b.formats['application/x-mobipocket-ebook'] || 
+                        b.formats['text/html'];
+        const author = b.authors && b.authors[0] ? b.authors[0].name.replace(/,\s*/, ' ') : 'Domínio Público';
+        const isPt = (b.languages || []).includes('pt');
+
+        let score = 50;
+        if (isPt) score += 90;
+        score += 40; // EPUB priority
+
+        return {
+          id: `gut_${b.id}`,
+          title: b.title,
+          author: author,
+          year: null,
+          cover: b.formats['image/jpeg'] || `https://covers.openlibrary.org/b/id/12717088-L.jpg`,
+          format: 'epub',
+          size: '1.8 MB',
+          downloadUrl: `https://www.gutenberg.org/ebooks/${b.id}.epub3.images`,
+          fallbackUrls: [
+            `https://www.gutenberg.org/ebooks/${b.id}.epub.images`,
+            `https://www.gutenberg.org/ebooks/${b.id}.epub.noimages`,
+            epubUrl
+          ].filter(Boolean),
+          source: 'Project Gutenberg',
+          language: isPt ? 'pt' : (b.languages?.[0] || 'en'),
+          badge: 'EPUB • Domínio Público',
+          rating: 4.9,
+          description: `Edição clássica verificada do Project Gutenberg com download direto.`,
+          score: score,
+          fallbackMd5s: []
+        };
+      });
+    } catch (e) {}
+  }
+
+  return [];
+}
+
+/**
  * Direct search on Libgen decentralized mirrors
  */
-async function searchLibgenMirrors(cleanQ) {
+export async function searchLibgenMirrors(cleanQ) {
   const libgenResults = [];
   const seenMd5s = new Set();
+  const normalizedQ = removeDiacritics(cleanQ);
 
-  for (const mirror of DOWNLOAD_MIRRORS.slice(0, 3)) {
+  const mirrorsToTry = DOWNLOAD_MIRRORS.slice(0, 2);
+
+  for (const mirror of mirrorsToTry) {
     try {
-      const url = `${mirror}/index.php?req=${encodeURIComponent(cleanQ)}&res=50`;
+      const url = `${mirror}/index.php?req=${encodeURIComponent(normalizedQ)}&res=25`;
       const res = await axios.get(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         },
         httpsAgent,
-        timeout: 5000
+        timeout: 4000
       });
 
       if (!res.data || typeof res.data !== 'string') continue;
@@ -126,70 +324,8 @@ async function searchLibgenMirrors(cleanQ) {
 }
 
 /**
- * Search Internet Archive (Archive.org) for high-speed direct downloads
- */
-async function searchArchiveOrg(cleanQ) {
-  const archiveResults = [];
-  try {
-    const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(cleanQ)}+format%3A(EPUB+OR+pdf)&fl[]=identifier,title,creator,year,mediatype&rows=5&output=json`;
-    const res = await axios.get(url, { timeout: 4000 });
-    const docs = res.data?.response?.docs || [];
-
-    for (const doc of docs) {
-      if (!doc.identifier || !doc.title) continue;
-      const author = Array.isArray(doc.creator) ? doc.creator[0] : (doc.creator || 'Domínio Público');
-      
-      archiveResults.push({
-        id: `ia_${doc.identifier}`,
-        md5: null,
-        iaIdentifier: doc.identifier,
-        title: doc.title,
-        author: author,
-        year: doc.year || null,
-        publisher: 'Internet Archive',
-        cover: `https://archive.org/services/img/${doc.identifier}`,
-        format: 'epub',
-        size: '2.5 MB',
-        language: 'pt',
-        downloadUrl: `https://archive.org/download/${doc.identifier}`,
-        source: "Internet Archive",
-        badge: "EPUB • 2.5 MB",
-        rating: 4.9,
-        description: `Disponível com download instantâneo no acervo universal do Internet Archive.`,
-        score: 60,
-        fallbackMd5s: []
-      });
-    }
-  } catch (e) {}
-  return archiveResults;
-}
-
-/**
- * Resolve direct download from Internet Archive identifier
- */
-async function resolveArchiveOrgEpub(identifier) {
-  if (!identifier) return null;
-  try {
-    const filesUrl = `https://archive.org/metadata/${identifier}/files`;
-    const res = await axios.get(filesUrl, { timeout: 4000 });
-    const files = res.data?.result || [];
-    
-    // Look for EPUB first, then PDF
-    const epub = files.find(f => f.name && f.name.toLowerCase().endsWith('.epub'));
-    if (epub) {
-      return `https://archive.org/download/${identifier}/${encodeURIComponent(epub.name)}`;
-    }
-    const pdf = files.find(f => f.name && f.name.toLowerCase().endsWith('.pdf'));
-    if (pdf) {
-      return `https://archive.org/download/${identifier}/${encodeURIComponent(pdf.name)}`;
-    }
-  } catch (e) {}
-  return null;
-}
-
-/**
- * Direct search resolver:
- * Searches Anna's Archive, decentralized shadow library mirrors, and Internet Archive.
+ * Multi-source search resolver:
+ * Queries decentralized shadow library mirrors, Internet Archive, and Project Gutenberg in parallel.
  */
 export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
   if (!query || !query.trim()) return [];
@@ -197,180 +333,37 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
 
   console.log(`[Search Resolver] Querying catalog for: "${cleanQ}" (format: ${format}, lang: ${lang})`);
 
-  let annaResults = [];
-  const seenKeys = new Set();
-
-  // 1. Direct Search on Anna's Archive Mirrors
-  for (const mirror of ANNAS_SEARCH_MIRRORS.slice(0, 3)) {
-    try {
-      const searchUrl = `${mirror}/search?q=${encodeURIComponent(cleanQ)}`;
-      
-      const response = await axios.get(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
-        },
-        httpsAgent,
-        timeout: 7000
-      });
-
-      if (!response.data || typeof response.data !== 'string' || response.data.length < 2000) {
-        continue;
-      }
-
-      const $ = cheerio.load(response.data);
-      const mirrorResults = [];
-
-      $('h3').each((i, el) => {
-        const titleLink = $(el).find('a').first();
-        const rawTitle = titleLink.text().replace(/\s+/g, ' ').trim();
-        const href = titleLink.attr('href') || $(el).closest('a').attr('href') || '';
-        
-        if (!rawTitle || rawTitle.length < 2) return;
-
-        const container = $(el).closest('div.min-w-0, div.flex-1').parent();
-        const img = container.find('img').first().attr('src') || '';
-        
-        const metaDivs = container.find('div.text-sm');
-        let authorAndMeta = metaDivs.first().text().replace(/\s+/g, ' ').trim();
-        let publisher = '';
-        metaDivs.each((_, m) => {
-          const txt = $(m).text().trim();
-          if (txt.toLowerCase().startsWith('publisher:')) {
-            publisher = txt.replace(/^publisher:\s*/i, '').trim();
-          }
-        });
-
-        const snippet = container.find('p.text-sm').text().replace(/\s+/g, ' ').trim();
-
-        const parts = authorAndMeta.split('·').map(p => p.trim());
-        let author = parts[0] && !parts[0].toLowerCase().includes('catalog') ? parts[0] : 'Autor Desconhecido';
-        if (author.includes(';')) author = author.split(';')[0].trim();
-        
-        let fileExt = 'epub';
-        let size = '2.0 MB';
-        let year = null;
-
-        for (const p of parts) {
-          const num = parseInt(p, 10);
-          if (num > 1500 && num < 2030 && !year) year = num;
-          if (/\b(epub|pdf|mobi|azw3|djvu)\b/i.test(p)) {
-            const match = p.match(/\b(epub|pdf|mobi|azw3|djvu)\b/i);
-            if (match) fileExt = match[1].toLowerCase();
-          }
-          if (/\b(\d+(\.\d+)?\s*(mb|kb|gb|b))\b/i.test(p)) {
-            const match = p.match(/\b(\d+(\.\d+)?\s*(mb|kb|gb|b))\b/i);
-            if (match) size = match[1].toUpperCase();
-          }
-        }
-
-        let bookLang = 'en';
-        const lowerMeta = (rawTitle + ' ' + authorAndMeta + ' ' + snippet).toLowerCase();
-        if (lowerMeta.includes('portug') || lowerMeta.includes('brasil') || lowerMeta.includes('brazil') || lowerMeta.includes('em português')) {
-          bookLang = 'pt';
-        } else if (lowerMeta.includes('span') || lowerMeta.includes('español') || lowerMeta.includes('espanhol')) {
-          bookLang = 'es';
-        } else if (lowerMeta.includes('french') || lowerMeta.includes('français')) {
-          bookLang = 'fr';
-        } else if (lowerMeta.includes('german') || lowerMeta.includes('deutsch')) {
-          bookLang = 'de';
-        }
-
-        let md5 = null;
-        const md5Match = href.match(/\/md5\/([a-f0-9]{32})/i) || href.match(/([a-f0-9]{32})/i);
-        if (md5Match) md5 = md5Match[1].toLowerCase();
-
-        const uniqueKey = md5 || rawTitle.toLowerCase();
-        if (seenKeys.has(uniqueKey)) return;
-        seenKeys.add(uniqueKey);
-
-        const fullHref = href.startsWith('http') ? href : `${mirror}${href.startsWith('/') ? '' : '/'}${href}`;
-        const downloadUrl = md5 ? `https://annas-archive.is/md5/${md5}` : fullHref;
-
-        let score = 50;
-        if (bookLang === 'pt') score += 100;
-        if (fileExt === 'epub') score += 50;
-        if (rawTitle.toLowerCase().includes(cleanQ.toLowerCase())) score += 50;
-        if (md5) score += 40;
-
-        mirrorResults.push({
-          id: `anna_${md5 || Buffer.from(rawTitle).toString('hex').substring(0, 16)}`,
-          md5: md5,
-          title: rawTitle,
-          author: author,
-          year: year,
-          publisher: publisher,
-          cover: img || `https://covers.openlibrary.org/b/id/12717088-L.jpg`,
-          format: fileExt === 'pdf' ? 'pdf' : 'epub',
-          size: size,
-          language: bookLang,
-          downloadUrl: downloadUrl,
-          source: "Anna's Archive",
-          badge: `${fileExt.toUpperCase()} • ${size}`,
-          rating: 4.8 + Math.round(Math.random() * 2) / 10,
-          description: snippet || `Disponível para leitura instantânea no acervo oficial do Anna's Archive.`,
-          score: score,
-          fallbackMd5s: md5 ? [md5] : []
-        });
-      });
-
-      if (mirrorResults.length > 0) {
-        annaResults = mirrorResults;
-        break;
-      }
-    } catch (err) {}
-  }
-
-  // 2. Query Libgen & Internet Archive in parallel
-  const [libgenResults, archiveResults] = await Promise.all([
+  // Query all 3 providers concurrently with tight timeouts
+  const [libgenResults, archiveResults, gutenbergResults] = await Promise.all([
     searchLibgenMirrors(cleanQ),
-    searchArchiveOrg(cleanQ)
+    searchArchiveOrg(cleanQ, lang),
+    searchGutenberg(cleanQ)
   ]);
 
-  // 3. Cross-match: Populate missing MD5s and group fallback alternative MD5s
-  const allDiscoveredMd5s = libgenResults.map(lb => lb.md5).filter(Boolean);
+  // Merge results with deduplication
+  const combined = [];
+  const seenTitles = new Set();
 
-  for (const annaBook of annaResults) {
-    const cleanAnnaTitle = cleanTitleForSearch(annaBook.title).toLowerCase();
-    
-    // Find all matching libgen candidates for this title
-    const matchingLibgen = libgenResults.filter(lb => {
-      const cleanLbTitle = cleanTitleForSearch(lb.title).toLowerCase();
-      return cleanLbTitle.includes(cleanAnnaTitle) || cleanAnnaTitle.includes(cleanLbTitle);
-    });
-
-    const candidateMd5List = matchingLibgen.map(m => m.md5).filter(Boolean);
-    if (!annaBook.md5 && candidateMd5List.length > 0) {
-      annaBook.md5 = candidateMd5List[0];
-      annaBook.downloadUrl = `https://annas-archive.is/md5/${candidateMd5List[0]}`;
-      annaBook.id = `anna_${candidateMd5List[0]}`;
-      annaBook.score += 40;
-    }
-
-    annaBook.fallbackMd5s = Array.from(new Set([
-      ...(annaBook.md5 ? [annaBook.md5] : []),
-      ...candidateMd5List,
-      ...allDiscoveredMd5s.slice(0, 3)
-    ]));
-  }
-
-  // Combine results: Anna results + Libgen + Archive.org
-  const combined = [...annaResults];
-  for (const lb of libgenResults) {
-    const isPresent = combined.some(b => b.md5 === lb.md5 || cleanTitleForSearch(b.title).toLowerCase() === cleanTitleForSearch(lb.title).toLowerCase());
-    if (!isPresent) {
-      lb.fallbackMd5s = allDiscoveredMd5s;
-      combined.push(lb);
+  function addIfUnique(book) {
+    if (!book || !book.title) return;
+    const norm = removeDiacritics(cleanTitleForSearch(book.title)).toLowerCase().slice(0, 30);
+    if (!seenTitles.has(norm) && (!book.md5 || !seenTitles.has(book.md5))) {
+      seenTitles.add(norm);
+      if (book.md5) seenTitles.add(book.md5);
+      combined.push(book);
     }
   }
 
-  for (const ar of archiveResults) {
-    const isPresent = combined.some(b => cleanTitleForSearch(b.title).toLowerCase() === cleanTitleForSearch(ar.title).toLowerCase());
-    if (!isPresent) {
-      combined.push(ar);
-    }
-  }
+  // Populate fallback alternative MD5s across Libgen results
+  const topLibgenMd5s = libgenResults.slice(0, 5).map(b => b.md5).filter(Boolean);
+  libgenResults.forEach(b => {
+    b.fallbackMd5s = topLibgenMd5s;
+    addIfUnique(b);
+  });
+
+  // Add Internet Archive & Gutenberg results
+  archiveResults.forEach(addIfUnique);
+  gutenbergResults.forEach(addIfUnique);
 
   // Filter by format if requested
   let filtered = combined;
@@ -386,15 +379,15 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
     if (langExact.length > 0) filtered = langExact;
   }
 
-  // Sort: Portuguese first, epub first, verified MD5 first, then score
+  // Sort: Portuguese first, epub first, verified source score
   filtered.sort((a, b) => {
     const aIsPt = a.language === 'pt' ? 1 : 0;
     const bIsPt = b.language === 'pt' ? 1 : 0;
     if (aIsPt !== bIsPt) return bIsPt - aIsPt;
 
-    const aHasMd5 = a.md5 ? 1 : 0;
-    const bHasMd5 = b.md5 ? 1 : 0;
-    if (aHasMd5 !== bHasMd5) return bHasMd5 - aHasMd5;
+    const aIsEpub = a.format === 'epub' ? 1 : 0;
+    const bIsEpub = b.format === 'epub' ? 1 : 0;
+    if (aIsEpub !== bIsEpub) return bIsEpub - aIsEpub;
 
     return (b.score || 0) - (a.score || 0);
   });
@@ -403,123 +396,102 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
 }
 
 /**
- * Resolves a list of direct high-speed download links across candidate MD5s, mirrors & Archive.org
+ * Resolves all candidate direct download links in parallel (Archive.org, Gutenberg, Libgen)
  */
-export async function resolveAnnaDownloadUrl(md5, title = null, candidateMd5s = []) {
+export async function resolveAllDownloadUrls(md5, title = null, candidateMd5s = []) {
+  const candidateUrls = [];
+  const cleanTitle = cleanTitleForSearch(title);
+
   const md5sToTry = Array.from(new Set([
     ...(md5 ? [md5] : []),
-    ...(Array.isArray(candidateMd5s) ? candidateMd5s : [candidateMd5s]),
-  ])).filter(Boolean);
+    ...(Array.isArray(candidateMd5s) ? candidateMd5s.slice(0, 3) : [candidateMd5s]),
+  ])).filter(Boolean).slice(0, 3);
 
-  console.log(`[Resolver] Resolving download mirror for MD5s: [${md5sToTry.join(', ')}] (title: ${title || 'N/A'})`);
-
-  // 1. Try resolving key link for candidate MD5s on LibGen mirrors
-  for (const candidate of md5sToTry) {
-    for (const dom of DOWNLOAD_MIRRORS.slice(0, 3)) {
-      const urlsToTry = [
-        `${dom}/ads.php?md5=${candidate}`,
-        `${dom}/get.php?md5=${candidate}`
-      ];
-
-      for (const pageUrl of urlsToTry) {
-        try {
-          const res = await axios.get(pageUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-            },
-            httpsAgent,
-            timeout: 3500
-          });
-
-          const $ = cheerio.load(res.data);
-          let keyLink = null;
-          $('a').each((i, el) => {
-            const href = $(el).attr('href');
-            if (href && href.includes('key=')) {
-              keyLink = href.startsWith('http') ? href : `${dom}/${href.replace(/^\//, '')}`;
-            }
-          });
-
-          if (keyLink) {
-            console.log(`[Resolver] Resolved key link on ${dom} for ${candidate}: ${keyLink}`);
-            return keyLink;
-          }
-        } catch (e) {}
-      }
-    }
-  }
-
-  // 2. Auto-search Archive.org for instant open-access EPUB stream
-  if (title && title.trim().length > 1) {
-    const cleanTitle = cleanTitleForSearch(title);
-    console.log(`[Resolver] Querying Archive.org for: "${cleanTitle}"...`);
-    try {
-      const archiveDocs = await searchArchiveOrg(cleanTitle);
-      for (const doc of archiveDocs) {
-        if (doc.iaIdentifier) {
-          const iaUrl = await resolveArchiveOrgEpub(doc.iaIdentifier);
-          if (iaUrl) {
-            console.log(`🎉 [Resolver] Archive.org SUCCESS: ${iaUrl}`);
-            return iaUrl;
-          }
-        }
-      }
-    } catch (e) {}
-  }
-
-  // 3. If MD5s failed, auto-search by clean title across shadow mirrors
-  if (title && title.trim().length > 1) {
-    const cleanTitle = cleanTitleForSearch(title);
-    console.log(`[Resolver] Auto-searching mirrors for title: "${cleanTitle}"...`);
-
-    for (const dom of DOWNLOAD_MIRRORS.slice(0, 2)) {
+  // Run all discovery tasks concurrently
+  const [iaUrl, gutUrl, libgenKey] = await Promise.all([
+    // 1. Internet Archive by title
+    (async () => {
+      if (!cleanTitle || cleanTitle.length < 2) return null;
       try {
-        const searchUrl = `${dom}/index.php?req=${encodeURIComponent(cleanTitle)}&res=25`;
-        const res = await axios.get(searchUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-          httpsAgent,
-          timeout: 4500
-        });
-
-        const $ = cheerio.load(res.data);
-        const rows = $('table#tablelibgen tbody tr, table.table tbody tr');
-
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows.eq(i);
-          const rowHtml = row.html() || '';
-          const md5Match = rowHtml.match(/md5=([a-f0-9]{32})/i) || rowHtml.match(/([a-f0-9]{32})/i);
-
-          if (md5Match) {
-            const foundMd5 = md5Match[1];
-            if (!md5sToTry.includes(foundMd5)) {
-              console.log(`[Resolver] Trying newly discovered candidate MD5: ${foundMd5}...`);
-              
-              try {
-                const keyRes = await axios.get(`${dom}/ads.php?md5=${foundMd5}`, {
-                  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                  httpsAgent,
-                  timeout: 3500
-                });
-                const $key = cheerio.load(keyRes.data);
-                let altKey = null;
-                $key('a').each((j, el) => {
-                  const href = $key(el).attr('href');
-                  if (href && href.includes('key=')) {
-                    altKey = href.startsWith('http') ? href : `${dom}/${href.replace(/^\//, '')}`;
-                  }
-                });
-                if (altKey) {
-                  console.log(`🎉 [Resolver] Auto-recovery SUCCESS: ${altKey}`);
-                  return altKey;
-                }
-              } catch (e) {}
-            }
+        const docs = await searchArchiveOrg(cleanTitle);
+        for (const doc of docs.slice(0, 3)) {
+          if (doc.iaIdentifier) {
+            const direct = await resolveArchiveOrgEpub(doc.iaIdentifier);
+            if (direct) return direct;
           }
         }
-      } catch (err) {}
+      } catch (e) {}
+      return null;
+    })(),
+
+    // 2. Project Gutenberg by title
+    (async () => {
+      if (!cleanTitle || cleanTitle.length < 2) return null;
+      try {
+        const gutDocs = await searchGutenberg(cleanTitle);
+        if (gutDocs.length > 0 && gutDocs[0].downloadUrl) {
+          return gutDocs[0].downloadUrl;
+        }
+      } catch (e) {}
+      return null;
+    })(),
+
+    // 3. Libgen key link
+    (async () => {
+      if (md5sToTry.length === 0) return null;
+      for (const candidate of md5sToTry) {
+        for (const dom of DOWNLOAD_MIRRORS.slice(0, 2)) {
+          try {
+            const pageUrl = `${dom}/ads.php?md5=${candidate}`;
+            const res = await axios.get(pageUrl, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+              httpsAgent,
+              timeout: 2500
+            });
+            const $ = cheerio.load(res.data);
+            let keyLink = null;
+            $('a').each((i, el) => {
+              const href = $(el).attr('href');
+              if (href && href.includes('key=')) {
+                keyLink = href.startsWith('http') ? href : `${dom}/${href.replace(/^\//, '')}`;
+              }
+            });
+            if (keyLink) return keyLink;
+          } catch (e) {}
+        }
+      }
+      return null;
+    })()
+  ]);
+
+  // Cross-reference curated verified books by title
+  if (cleanTitle) {
+    const norm = removeDiacritics(cleanTitle).toLowerCase();
+    const allCurated = CURATED_COLLECTIONS.flatMap(c => c.books);
+    const matchedCurated = allCurated.find(b => {
+      const bNorm = removeDiacritics(b.title).toLowerCase();
+      return bNorm.includes(norm) || norm.includes(bNorm);
+    });
+    if (matchedCurated) {
+      if (matchedCurated.downloadUrl) candidateUrls.push(matchedCurated.downloadUrl);
+      if (matchedCurated.fallbackUrls) candidateUrls.push(...matchedCurated.fallbackUrls);
     }
   }
 
-  return md5 ? `https://libgen.li/ads.php?md5=${md5}` : null;
+  if (gutUrl) candidateUrls.push(gutUrl);
+  if (iaUrl) candidateUrls.push(iaUrl);
+  if (libgenKey) candidateUrls.push(libgenKey);
+
+  const uniqueCandidates = Array.from(new Set(candidateUrls)).filter(Boolean);
+  console.log(`[Resolver] Resolved ${uniqueCandidates.length} direct candidate URLs for "${cleanTitle || md5}":`, uniqueCandidates);
+  return uniqueCandidates;
 }
+
+/**
+ * Resolves high-speed direct download link across Libgen keys, Archive.org, and Gutenberg
+ */
+export async function resolveAnnaDownloadUrl(md5, title = null, candidateMd5s = []) {
+  const allUrls = await resolveAllDownloadUrls(md5, title, candidateMd5s);
+  return allUrls[0] || (md5 ? `https://libgen.li/ads.php?md5=${md5}` : null);
+}
+

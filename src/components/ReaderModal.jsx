@@ -163,7 +163,7 @@ function generateReaderCss(settings) {
   `;
 }
 
-export function ReaderModal({ book, onClose, onProgressUpdate }) {
+export function ReaderModal({ book, onClose, onProgressUpdate, onSearchAlternative, onOpenImportModal }) {
   const viewerRef = useRef(null);
   const bookInstanceRef = useRef(null);
   const renditionRef = useRef(null);
@@ -760,30 +760,64 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           </div>
         )}
 
-        {/* Error Fallback */}
+        {/* Error Fallback with Multi-Option Recovery */}
         {error && (
           <div className="apple-error-overlay" style={{ backgroundColor: currentThemeBody.background }}>
-            <div className="apple-error-card">
-              <div className="apple-error-icon">
-                <AlertCircle size={32} />
+            <div className="apple-error-card" style={{ maxWidth: '440px', textAlign: 'center', padding: '24px' }}>
+              <div className="apple-error-icon" style={{ margin: '0 auto 12px' }}>
+                <AlertCircle size={36} color="#ef4444" />
               </div>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Erro ao carregar livro</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '6px' }}>Erro ao carregar livro</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: '1.45', marginBottom: '18px' }}>
                 {error}
               </p>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                 <button 
-                  className="btn-secondary" 
+                  className="btn-primary" 
+                  style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', fontWeight: 600 }}
                   onClick={async () => {
                     if (book?.id) await clearBookBinary(book.id);
                     setError(null);
                     setRetryCount(c => c + 1);
                   }}
                 >
+                  <Loader2 size={16} className={retryCount > 0 ? 'animate-spin' : ''} />
                   Tentar Novamente
                 </button>
+
+                {onSearchAlternative && book?.title && (
+                  <button 
+                    className="btn-secondary" 
+                    style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', gap: '8px' }}
+                    onClick={() => onSearchAlternative(book.title)}
+                  >
+                    <Search size={16} />
+                    Buscar Edições Alternativas
+                  </button>
+                )}
+
+                {onOpenImportModal && (
+                  <button 
+                    className="btn-secondary" 
+                    style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', gap: '8px' }}
+                    onClick={onOpenImportModal}
+                  >
+                    <BookOpen size={16} />
+                    Importar Arquivo (.EPUB / .PDF)
+                  </button>
+                )}
+
                 <button 
-                  className="btn-primary" 
+                  style={{ 
+                    background: 'transparent', 
+                    border: 'none', 
+                    color: 'var(--text-muted)', 
+                    fontSize: '0.82rem', 
+                    padding: '8px', 
+                    cursor: 'pointer',
+                    marginTop: '4px' 
+                  }}
                   onClick={onClose}
                 >
                   Voltar à Biblioteca

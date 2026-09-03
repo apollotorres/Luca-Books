@@ -3,7 +3,7 @@ import cors from 'cors';
 import axios from 'axios';
 import https from 'https';
 import { CURATED_COLLECTIONS } from './data/curatedBooks.js';
-import { searchAnnasArchive, resolveAnnaDownloadUrl } from './resolvers/annasResolver.js';
+import { searchAnnasArchive, resolveAnnaDownloadUrl, resolveAllDownloadUrls } from './resolvers/annasResolver.js';
 
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false
@@ -112,7 +112,7 @@ router.get('/search', async (req, res) => {
   }
 });
 
-// Exclusive Stream & Download Proxy with Auto-Recovery Cascade
+// Exclusive Stream & Download Proxy with Multi-Provider Auto-Recovery Cascade
 router.get('/download', async (req, res) => {
   let fileUrl = req.query.url;
   const bookId = req.query.id;
@@ -126,19 +126,40 @@ router.get('/download', async (req, res) => {
     return res.status(400).json({ error: 'Missing url, id or title parameter' });
   }
 
-  console.log(`[Stream Proxy] Request to download: ${fileUrl || 'N/A'} (title: "${title || 'N/A'}", candidates: ${candidateMd5s.length})`);
+  console.log(`[Stream Proxy] Request to download: ${fileUrl || 'N/A'} (id: ${bookId || 'N/A'}, title: "${title || 'N/A'}")`);
 
-  // 1. Resolve MD5 from parameter or URLs
-  const md5Match = (fileUrl || '').match(/md5\/([a-f0-9]{32})/i) || 
-                   (fileUrl || '').match(/md5=([a-f0-9]{32})/i) || 
-                   (bookId || '').match(/anna_([a-f0-9]{32})/i);
+  // 1. Direct handler for Internet Archive books (id: ia_identifier)
+  if (bookId && bookId.startsWith('ia_')) {
+    const iaId = bookId.replace(/^ia_/, '');
+    const { resolveArchiveOrgEpub } = await import('./resolvers/annasResolver.js');
+    const iaDirect = await resolveArchiveOrgEpub(iaId);
+    if (iaDirect) {
+      const streamed = await tryStreamUrl(iaDirect, rangeHeader, res);
+      if (streamed) return;
+    }
+  }
 
-  const md5 = md5Match ? md5Match[1] : (candidateMd5s[0] || null);
+  // 2. Direct handler for Project Gutenberg books (id: gut_1234)
+  if (bookId && bookId.startsWith('gut_')) {
+    const gutNum = bookId.replace(/^gut_/, '');
+    const gutUrls = [
+      `https://www.gutenberg.org/ebooks/${gutNum}.epub3.images`,
+      `https://www.gutenberg.org/ebooks/${gutNum}.epub.images`,
+      `https://www.gutenberg.org/ebooks/${gutNum}.epub.noimages`
+    ];
+    for (const u of gutUrls) {
+      const streamed = await tryStreamUrl(u, rangeHeader, res);
+      if (streamed) return;
+    }
+  }
 
-  // 2. Resolve direct mirror link
-  let resolvedDirectUrl = await resolveAnnaDownloadUrl(md5, title, candidateMd5s);
+  // 3. If fileUrl is a direct external repository link (Archive.org / Gutenberg), try streaming it directly
+  if (fileUrl && (fileUrl.includes('archive.org/download') || fileUrl.includes('gutenberg.org/ebooks'))) {
+    const streamed = await tryStreamUrl(fileUrl, rangeHeader, res);
+    if (streamed) return;
+  }
 
-  // 3. Build list of candidate mirror URLs
+  // 4. Curated dataset fallback links
   let fallbacks = [];
   if (bookId) {
     const allCurated = CURATED_COLLECTIONS.flatMap(c => c.books);
@@ -148,43 +169,58 @@ router.get('/download', async (req, res) => {
     }
   }
 
-  const urlsToTry = [
-    resolvedDirectUrl,
-    fileUrl && !fileUrl.includes('/books/') ? fileUrl : null,
-    ...fallbacks
-  ].filter(Boolean);
+  // 5. Resolve MD5 from parameter or URLs
+  const md5Match = (fileUrl || '').match(/md5\/([a-f0-9]{32})/i) || 
+                   (fileUrl || '').match(/md5=([a-f0-9]{32})/i) || 
+                   (bookId || '').match(/anna_([a-f0-9]{32})/i);
 
-  // 4. Try streaming primary mirrors
+  const md5 = md5Match ? md5Match[1] : (candidateMd5s[0] || null);
+
+  // 6. Resolve all candidate direct mirror links in parallel
+  const resolvedDirectUrls = await resolveAllDownloadUrls(md5, title, candidateMd5s);
+
+  const urlsToTry = Array.from(new Set([
+    ...resolvedDirectUrls,
+    fileUrl && !fileUrl.includes('/books/') && !fileUrl.includes('/md5/') ? fileUrl : null,
+    ...fallbacks
+  ])).filter(Boolean);
+
+  // 7. Try streaming candidate mirrors in priority order
   for (let i = 0; i < urlsToTry.length; i++) {
     const currentUrl = urlsToTry[i];
     const streamed = await tryStreamUrl(currentUrl, rangeHeader, res);
     if (streamed) return;
   }
 
-  // 5. Auto-recovery by title and candidate MD5 cascade
-  console.log(`[Stream Proxy] Primary mirror failed. Auto-recovering across candidate mirrors for: "${title || 'N/A'}"...`);
-  try {
-    const recoveryUrl = await resolveAnnaDownloadUrl(null, title, candidateMd5s);
-    if (recoveryUrl && !urlsToTry.includes(recoveryUrl)) {
-      const streamed = await tryStreamUrl(recoveryUrl, rangeHeader, res);
-      if (streamed) {
-        console.log(`🎉 [Stream Proxy] Auto-recovery SUCCESS for "${title}"`);
-        return;
+  // 8. Auto-recovery by title across open access archives
+  if (title && title.trim().length > 1) {
+    console.log(`[Stream Proxy] Primary mirrors failed. Auto-recovering across open repositories for: "${title}"...`);
+    try {
+      const recoveryUrls = await resolveAllDownloadUrls(null, title, []);
+      for (const recUrl of recoveryUrls) {
+        if (!urlsToTry.includes(recUrl)) {
+          const streamed = await tryStreamUrl(recUrl, rangeHeader, res);
+          if (streamed) {
+            console.log(`🎉 [Stream Proxy] Auto-recovery SUCCESS for "${title}" from ${recUrl}`);
+            return;
+          }
+        }
       }
+    } catch (autoErr) {
+      console.warn('[Stream Proxy] Auto-recovery error:', autoErr.message);
     }
-  } catch (autoErr) {
-    console.warn('[Stream Proxy] Auto-recovery error:', autoErr.message);
   }
 
   res.status(502).json({ 
-    error: 'Servidores de espelho temporariamente sobrecarregados. Tente novamente em alguns instantes.',
+    error: 'Servidores de espelho temporariamente sobrecarregados. Tente outra edição ou importe seu arquivo diretamente.',
+    title: title || '',
     url: fileUrl 
   });
 });
 
 async function tryStreamUrl(currentUrl, rangeHeader, res) {
   if (!currentUrl || typeof currentUrl !== 'string') return false;
-  if (currentUrl.includes('/books/')) {
+  if (currentUrl.includes('/books/') || currentUrl.includes('ads.php')) {
     return false;
   }
 
@@ -208,7 +244,7 @@ async function tryStreamUrl(currentUrl, rangeHeader, res) {
       method: 'get',
       url: currentUrl,
       responseType: 'stream',
-      timeout: 20000,
+      timeout: 12000,
       headers,
       httpsAgent,
       maxRedirects: 5,
