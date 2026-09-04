@@ -16,14 +16,27 @@ const DOWNLOAD_MIRRORS = [
   'https://libgen.pm'
 ];
 
-// Anna's Archive Search Mirrors
+// Official and community Anna's Archive Search Mirrors
 const ANNAS_SEARCH_MIRRORS = [
   'https://annas-archive.is',
+  'https://annas-archive.org',
   'https://annas-archive.li',
   'https://annas-archive.pm',
   'https://annas-archive.gs',
   'https://annas-archive.pk'
 ];
+
+// Public IPFS Gateways for decentralized content fallback
+const IPFS_GATEWAYS = [
+  'https://cloudflare-ipfs.com/ipfs',
+  'https://ipfs.io/ipfs',
+  'https://gateway.pinata.cloud/ipfs',
+  'https://dweb.link/ipfs'
+];
+
+// In-memory cache for search results (TTL: 10 minutes)
+const searchCache = new Map();
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Remove accents and special characters for broad search compatibility
@@ -61,7 +74,7 @@ export function normalizeTitle(title) {
 }
 
 /**
- * 1. Search Project Gutenberg via Gutendex
+ * 1. Search Project Gutenberg via Gutendex API
  */
 export async function searchGutenberg(query, lang = 'all') {
   if (!query || !query.trim()) return [];
@@ -78,7 +91,7 @@ export async function searchGutenberg(query, lang = 'all') {
     try {
       const url = `https://gutendex.com/books/?search=${encodeURIComponent(qText)}`;
       const res = await axios.get(url, { 
-        headers: { 'User-Agent': 'Mozilla/5.0' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
         timeout: 4000 
       });
       const books = res.data?.results || [];
@@ -421,7 +434,8 @@ export async function searchLibgenMirrors(cleanQ) {
 }
 
 /**
- * Search Anna's Archive directly & mirrors
+ * 5. Search Anna's Archive using exact search engine query parameters
+ * (ext, lang, content=book_any, sort=most_relevant)
  */
 export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
   if (!query || !query.trim()) return [];
@@ -430,10 +444,20 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
   let allResults = [];
   const seenIds = new Set();
 
+  // Construct official query parameters per Anna's Archive software repository
+  const extParam = format && format !== 'all' ? `&ext=${encodeURIComponent(format)}` : '';
+  let langParam = '';
+  if (lang === 'pt') langParam = '&lang=pt,por';
+  else if (lang === 'en') langParam = '&lang=en';
+  else if (lang && lang !== 'all') langParam = `&lang=${encodeURIComponent(lang)}`;
+
+  const contentParam = '&content=book_any'; // Focus on books, exclude papers/journals
+  const sortParam = '&sort=most_relevant';
+
   // Try official search mirrors first
   for (const mirror of ANNAS_SEARCH_MIRRORS) {
     try {
-      const searchUrl = `${mirror}/search?q=${encodeURIComponent(cleanQ)}`;
+      const searchUrl = `${mirror}/search?q=${encodeURIComponent(cleanQ)}${extParam}${langParam}${contentParam}${sortParam}`;
       const response = await axios.get(searchUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -441,26 +465,34 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
           'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
         },
         httpsAgent,
-        timeout: 5000
+        timeout: 5500
       });
 
-      if (!response.data || typeof response.data !== 'string' || response.data.length < 3000) {
+      if (!response.data || typeof response.data !== 'string' || response.data.length < 2500) {
         continue;
       }
 
       const $ = cheerio.load(response.data);
       const mirrorResults = [];
 
-      $('h3').each((i, el) => {
-        const titleLink = $(el).find('a').first();
-        const rawTitle = titleLink.text().replace(/\s+/g, ' ').trim();
-        const href = titleLink.attr('href') || $(el).closest('a').attr('href') || '';
-        if (!rawTitle || rawTitle.length < 2) return;
+      // Modern Anna's Archive search items: matches both h3 and a[href*="/md5/"]
+      $('h3, a[href*="/md5/"]').each((i, el) => {
+        let titleLink = $(el).is('a') ? $(el) : $(el).find('a').first();
+        if (!titleLink.length && $(el).closest('a').length) {
+          titleLink = $(el).closest('a');
+        }
 
-        const container = $(el).closest('div.min-w-0, div.flex-1').parent();
-        const img = container.find('img').first().attr('src') || '';
+        const rawTitle = (titleLink.text() || $(el).text()).replace(/\s+/g, ' ').trim();
+        const href = titleLink.attr('href') || $(el).closest('a').attr('href') || '';
+        if (!rawTitle || rawTitle.length < 2 || rawTitle.toLowerCase().includes('donate')) return;
+
+        const container = $(el).closest('div.min-w-0, div.flex-1, div.border-b, div.my-2').parent();
+        let img = container.find('img').first().attr('src') || '';
+        if (img && img.startsWith('/')) {
+          img = `${mirror}${img}`;
+        }
         
-        const metaDivs = container.find('div.text-sm');
+        const metaDivs = container.find('div.text-sm, div.text-xs, div.text-gray-500');
         let authorAndMeta = metaDivs.first().text().replace(/\s+/g, ' ').trim();
         let publisher = '';
         metaDivs.each((_, m) => {
@@ -470,12 +502,14 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
           }
         });
 
-        const snippet = container.find('p.text-sm').text().replace(/\s+/g, ' ').trim();
+        const snippet = container.find('p.text-sm, div.italic').text().replace(/\s+/g, ' ').trim();
         const parts = authorAndMeta.split('·').map(p => p.trim());
-        let author = parts[0] && !parts[0].toLowerCase().includes('catalog') ? parts[0] : 'Autor Desconhecido';
+        let author = parts[0] && !parts[0].toLowerCase().includes('catalog') && !parts[0].toLowerCase().includes('publisher') 
+          ? parts[0] 
+          : 'Autor Desconhecido';
         if (author.includes(';')) author = author.split(';')[0].trim();
         
-        let fileExt = 'epub';
+        let fileExt = format && format !== 'all' ? format : 'epub';
         let size = '2.0 MB';
         let year = null;
 
@@ -554,12 +588,20 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
 }
 
 /**
- * 5. UNIFIED MULTI-SOURCE SEARCH RESOLVER
+ * 6. UNIFIED MULTI-SOURCE SEARCH RESOLVER WITH IN-MEMORY CACHE
  * Queries Project Gutenberg, Internet Archive, Open Library, and Anna's Archive in parallel.
  */
 export async function searchAllSources(query, format = 'epub', lang = 'all') {
   if (!query || !query.trim()) return [];
   const cleanQ = query.trim();
+
+  // Check cache
+  const cacheKey = `${cleanQ.toLowerCase()}|${format}|${lang}`;
+  const cached = searchCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+    console.log(`[Multi-Source Search] Serving cached results for: "${cleanQ}"`);
+    return cached.results;
+  }
 
   console.log(`[Multi-Source Search] Querying all providers for: "${cleanQ}" (format: ${format}, lang: ${lang})`);
 
@@ -575,7 +617,7 @@ export async function searchAllSources(query, format = 'epub', lang = 'all') {
   const openLibBooks = openLibSettled.status === 'fulfilled' ? openLibSettled.value : [];
   const annasBooks = annasSettled.status === 'fulfilled' ? annasSettled.value : [];
 
-  console.log(`[Multi-Source Search] Results count: Gutenberg (${gutenbergBooks.length}), Archive.org (${archiveBooks.length}), OpenLibrary (${openLibBooks.length}), Anna's Archive (${annasBooks.length})`);
+  console.log(`[Multi-Source Search] Results: Gutenberg (${gutenbergBooks.length}), Archive.org (${archiveBooks.length}), OpenLibrary (${openLibBooks.length}), Anna's Archive (${annasBooks.length})`);
 
   const combined = [];
   const seenNormTitles = new Set();
@@ -627,11 +669,18 @@ export async function searchAllSources(query, format = 'epub', lang = 'all') {
     return (b.score || 0) - (a.score || 0);
   });
 
+  // Save to cache (prune if cache is larger than 150 items)
+  if (searchCache.size > 150) {
+    const firstKey = searchCache.keys().next().value;
+    searchCache.delete(firstKey);
+  }
+  searchCache.set(cacheKey, { timestamp: Date.now(), results: filtered });
+
   return filtered;
 }
 
 /**
- * Resolves all candidate direct download links in parallel (Archive.org, Gutenberg, Libgen)
+ * Resolves all candidate direct download links in parallel (Official Fast Download API, Archive.org, Gutenberg, Libgen, IPFS)
  */
 export async function resolveAllDownloadUrls(md5, title = null, candidateMd5s = []) {
   const candidateUrls = [];
@@ -642,9 +691,24 @@ export async function resolveAllDownloadUrls(md5, title = null, candidateMd5s = 
     ...(Array.isArray(candidateMd5s) ? candidateMd5s.slice(0, 3) : [candidateMd5s]),
   ])).filter(Boolean).slice(0, 3);
 
-  // Run all discovery tasks concurrently
+  // 1. Check for official Anna's Archive Fast Download API Key if configured
+  const fastKey = process.env.ANNAS_FAST_DOWNLOAD_KEY || process.env.ANNAS_API_KEY;
+  if (fastKey && md5sToTry.length > 0) {
+    try {
+      const fastUrl = `https://annas-archive.org/dyn/api/fast_download.json?md5=${md5sToTry[0]}&key=${fastKey}`;
+      const fastRes = await axios.get(fastUrl, { timeout: 3000, httpsAgent });
+      if (fastRes.data?.download_url) {
+        console.log(`[Fast Download API] Direct link resolved via official API for MD5: ${md5sToTry[0]}`);
+        candidateUrls.push(fastRes.data.download_url);
+      }
+    } catch (e) {
+      console.warn('[Fast Download API] Notice:', e.message);
+    }
+  }
+
+  // 2. Run parallel discovery across open repositories and decentralized mirrors
   const [iaUrl, gutUrl, libgenKey] = await Promise.all([
-    // 1. Internet Archive by title
+    // Internet Archive by title
     (async () => {
       if (!cleanTitle || cleanTitle.length < 2) return null;
       try {
@@ -659,7 +723,7 @@ export async function resolveAllDownloadUrls(md5, title = null, candidateMd5s = 
       return null;
     })(),
 
-    // 2. Project Gutenberg by title
+    // Project Gutenberg by title
     (async () => {
       if (!cleanTitle || cleanTitle.length < 2) return null;
       try {
@@ -671,11 +735,11 @@ export async function resolveAllDownloadUrls(md5, title = null, candidateMd5s = 
       return null;
     })(),
 
-    // 3. Libgen key link
+    // Libgen key link across active mirrors
     (async () => {
       if (md5sToTry.length === 0) return null;
       for (const candidate of md5sToTry) {
-        for (const dom of DOWNLOAD_MIRRORS.slice(0, 2)) {
+        for (const dom of DOWNLOAD_MIRRORS.slice(0, 3)) {
           try {
             const pageUrl = `${dom}/ads.php?md5=${candidate}`;
             const res = await axios.get(pageUrl, {
