@@ -61,11 +61,29 @@ export async function saveBookToLibrary(book, epubBuffer) {
   }
 }
 
-// Retrieve EPUB binary buffer from IndexedDB
+// Validate if buffer is valid book data (EPUB zip or PDF)
+export function isValidBookBinary(buffer) {
+  if (!buffer || buffer.byteLength < 100) return false;
+  const bytes = new Uint8Array(buffer.slice(0, 5));
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4B;
+  const isPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+  return isZip || isPdf;
+}
+
+// Retrieve EPUB binary buffer from IndexedDB with integrity check
 export async function getBookBinary(bookId) {
   try {
     const binaryKey = `epub_data_${bookId}`;
-    return await get(binaryKey);
+    const buffer = await get(binaryKey);
+    if (buffer) {
+      if (!isValidBookBinary(buffer)) {
+        console.warn(`[Storage] Clearing invalid cached binary for book ${bookId}`);
+        await del(binaryKey);
+        return null;
+      }
+      return buffer;
+    }
+    return null;
   } catch (err) {
     console.error(`Error reading binary for book ${bookId}:`, err);
     return null;
@@ -121,6 +139,16 @@ export async function removeBookFromLibrary(bookId) {
     return true;
   } catch (err) {
     console.error('Error removing book:', err);
+    return false;
+  }
+}
+
+// Clear specific binary cache for retry
+export async function clearBookBinary(bookId) {
+  try {
+    await del(`epub_data_${bookId}`);
+    return true;
+  } catch (e) {
     return false;
   }
 }

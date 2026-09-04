@@ -249,6 +249,15 @@ export function App() {
             refreshLibrary();
           }}
           onProgressUpdate={handleProgressUpdate}
+          onSearchAlternative={(title) => {
+            setActiveReaderBook(null);
+            setSearchQuery(title);
+            handleSearch(title, selectedLang, selectedFormat);
+          }}
+          onOpenImportModal={() => {
+            setActiveReaderBook(null);
+            setIsImportModalOpen(true);
+          }}
         />
       )}
 

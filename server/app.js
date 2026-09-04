@@ -1,13 +1,19 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import https from 'https';
 import { CURATED_COLLECTIONS } from './data/curatedBooks.js';
 import { 
   searchAllSources, 
   searchAnnasArchive, 
   resolveAnnaDownloadUrl, 
+  resolveAllDownloadUrls,
   resolveArchiveOrgEpub 
 } from './resolvers/annasResolver.js';
+
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false
+});
 
 const app = express();
 
@@ -105,6 +111,10 @@ router.get('/search', async (req, res) => {
       const bIsEpub = b.format === 'epub' ? 1 : 0;
       if (aIsEpub !== bIsEpub) return bIsEpub - aIsEpub;
 
+      const aHasMd5 = a.md5 ? 1 : 0;
+      const bHasMd5 = b.md5 ? 1 : 0;
+      if (aHasMd5 !== bHasMd5) return bHasMd5 - aHasMd5;
+
       return (b.score || 0) - (a.score || 0);
     });
 
@@ -123,14 +133,17 @@ router.get('/search', async (req, res) => {
   }
 });
 
-// Multi-Source Download & Stream Proxy
+// Exclusive Stream & Download Proxy with Multi-Provider Auto-Recovery Cascade
 router.get('/download', async (req, res) => {
   let fileUrl = req.query.url;
   const bookId = req.query.id;
   const title = req.query.title;
+  const rawFallbacks = req.query.fallbackMd5s || '';
   const rangeHeader = req.headers['range'];
 
-  if (!fileUrl && !bookId && !title) {
+  const candidateMd5s = rawFallbacks.split(',').map(s => s.trim()).filter(Boolean);
+
+  if (!fileUrl && !bookId && !title && candidateMd5s.length === 0) {
     return res.status(400).json({ error: 'Missing url, id or title parameter' });
   }
 
@@ -166,22 +179,7 @@ router.get('/download', async (req, res) => {
     if (streamed) return;
   }
 
-  // 4. Resolve MD5 key download link on Anna's Archive / Libgen mirrors
-  const md5Match = (fileUrl || '').match(/md5\/([a-f0-9]{32})/i) || 
-                   (fileUrl || '').match(/md5=([a-f0-9]{32})/i) || 
-                   (bookId || '').match(/anna_([a-f0-9]{32})/i);
-
-  if (md5Match) {
-    const md5 = md5Match[1];
-    console.log(`[Stream Proxy] Resolving Anna's archive direct download for MD5: ${md5}...`);
-    const resolvedUrl = await resolveAnnaDownloadUrl(md5, title);
-    if (resolvedUrl) {
-      const streamed = await tryStreamUrl(resolvedUrl, rangeHeader, res);
-      if (streamed) return;
-    }
-  }
-
-  // 5. Curated dataset fallback links
+  // 4. Curated dataset fallback links
   let fallbacks = [];
   if (bookId) {
     const allCurated = CURATED_COLLECTIONS.flatMap(c => c.books);
@@ -191,58 +189,61 @@ router.get('/download', async (req, res) => {
     }
   }
 
-  const baseUrls = [fileUrl, ...fallbacks].filter(Boolean);
-  const urlsToTry = [];
+  // 5. Resolve MD5 from parameter or URLs
+  const md5Match = (fileUrl || '').match(/md5\/([a-f0-9]{32})/i) || 
+                   (fileUrl || '').match(/md5=([a-f0-9]{32})/i) || 
+                   (bookId || '').match(/anna_([a-f0-9]{32})/i);
 
-  for (const u of baseUrls) {
-    if (u.includes('libgen.li')) {
-      urlsToTry.push(u);
-      urlsToTry.push(u.replace('libgen.li', 'libgen.gs'));
-      urlsToTry.push(u.replace('libgen.li', 'libgen.vg'));
-      urlsToTry.push(u.replace('libgen.li', 'libgen.pm'));
-      urlsToTry.push(u.replace('libgen.li', 'libgen.rocks'));
-    } else {
-      urlsToTry.push(u);
-    }
-  }
+  const md5 = md5Match ? md5Match[1] : (candidateMd5s[0] || null);
 
-  // 6. Try list of candidate URLs
+  // 6. Resolve all candidate direct mirror links in parallel
+  const resolvedDirectUrls = await resolveAllDownloadUrls(md5, title, candidateMd5s);
+
+  const urlsToTry = Array.from(new Set([
+    ...resolvedDirectUrls,
+    fileUrl && !fileUrl.includes('/books/') && !fileUrl.includes('/md5/') ? fileUrl : null,
+    ...fallbacks
+  ])).filter(Boolean);
+
+  // 7. Try streaming candidate mirrors in priority order
   for (let i = 0; i < urlsToTry.length; i++) {
     const currentUrl = urlsToTry[i];
     const streamed = await tryStreamUrl(currentUrl, rangeHeader, res);
     if (streamed) return;
   }
 
-  // 7. Auto-recovery by title across Anna's Archive
-  if (title && title.trim().length > 2) {
-    console.log(`[Stream Proxy] Primary mirror failed. Auto-recovering across Anna's Archive for: "${title}"...`);
+  // 8. Auto-recovery by title across open repositories and mirrors
+  if (title && title.trim().length > 1) {
+    console.log(`[Stream Proxy] Primary mirrors failed. Auto-recovering across open repositories for: "${title}"...`);
     try {
-      const candidates = await searchAnnasArchive(title, 'epub', 'all');
-      for (const cand of candidates) {
-        if (cand.md5) {
-          console.log(`[Stream Proxy] Auto-recovery trying candidate MD5: ${cand.md5} (${cand.title})...`);
-          const candUrl = await resolveAnnaDownloadUrl(cand.md5, title);
-          if (candUrl) {
-            const streamed = await tryStreamUrl(candUrl, rangeHeader, res);
-            if (streamed) {
-              console.log(`🎉 [Stream Proxy] Auto-recovery SUCCESS: ${cand.title}`);
-              return;
-            }
+      const recoveryUrls = await resolveAllDownloadUrls(null, title, []);
+      for (const recUrl of recoveryUrls) {
+        if (!urlsToTry.includes(recUrl)) {
+          const streamed = await tryStreamUrl(recUrl, rangeHeader, res);
+          if (streamed) {
+            console.log(`🎉 [Stream Proxy] Auto-recovery SUCCESS for "${title}" from ${recUrl}`);
+            return;
           }
         }
       }
     } catch (autoErr) {
-      console.warn('[Stream Proxy] Auto-recovery search error:', autoErr.message);
+      console.warn('[Stream Proxy] Auto-recovery error:', autoErr.message);
     }
   }
 
   res.status(502).json({ 
-    error: 'Não foi possível carregar este livro no momento. Tente outra edição disponível.',
+    error: 'Servidores de espelho temporariamente sobrecarregados. Tente outra edição ou importe seu arquivo diretamente.',
+    title: title || '',
     url: fileUrl 
   });
 });
 
 async function tryStreamUrl(currentUrl, rangeHeader, res) {
+  if (!currentUrl || typeof currentUrl !== 'string') return false;
+  if (currentUrl.includes('/books/') || currentUrl.includes('ads.php')) {
+    return false;
+  }
+
   try {
     console.log(`[Stream Proxy] Fetching: ${currentUrl}`);
     
@@ -250,9 +251,9 @@ async function tryStreamUrl(currentUrl, rangeHeader, res) {
     const refererHost = domainMatch ? `https://${domainMatch[1]}/` : 'https://libgen.li/';
 
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       'Accept': '*/*',
-      'Referer': currentUrl.includes('libgen') ? refererHost : undefined
+      'Referer': currentUrl.includes('libgen') || currentUrl.includes('booksdl') ? 'https://libgen.li/' : refererHost
     };
 
     if (rangeHeader) {
@@ -263,14 +264,22 @@ async function tryStreamUrl(currentUrl, rangeHeader, res) {
       method: 'get',
       url: currentUrl,
       responseType: 'stream',
-      timeout: 20000,
+      timeout: 12000,
       headers,
+      httpsAgent,
       maxRedirects: 5,
       validateStatus: (status) => status >= 200 && status < 300
     });
 
+    const rawContentType = (response.headers['content-type'] || '').toLowerCase();
+    
+    // Reject HTML error pages or JSON error payloads
+    if (rawContentType.includes('text/html') || rawContentType.includes('application/json')) {
+      console.warn(`[Stream Proxy] Target returned non-binary payload (${rawContentType}) from ${currentUrl}`);
+      return false;
+    }
+
     // Detect Content-Type (EPUB vs PDF)
-    const rawContentType = response.headers['content-type'] || '';
     let finalContentType = 'application/epub+zip';
     if (rawContentType.includes('pdf') || currentUrl.toLowerCase().includes('.pdf')) {
       finalContentType = 'application/pdf';

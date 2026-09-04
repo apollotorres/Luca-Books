@@ -30,7 +30,8 @@ import {
   getReadingProgress, 
   getReaderSettings, 
   saveReaderSettings, 
-  exportBookEpub 
+  exportBookEpub,
+  clearBookBinary
 } from '../services/db';
 import { fetchBookEpubBinary } from '../services/api';
 import { getSourceInfo } from './BookCard';
@@ -163,7 +164,7 @@ function generateReaderCss(settings) {
   `;
 }
 
-export function ReaderModal({ book, onClose, onProgressUpdate }) {
+export function ReaderModal({ book, onClose, onProgressUpdate, onSearchAlternative, onOpenImportModal }) {
   const viewerRef = useRef(null);
   const bookInstanceRef = useRef(null);
   const renditionRef = useRef(null);
@@ -174,6 +175,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
   const [downloadProgress, setDownloadProgress] = useState(12);
   const [downloadDetail, setDownloadDetail] = useState('Localizando espelhos de alta velocidade');
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const [currentChapter, setCurrentChapter] = useState('');
   const [progress, setProgress] = useState(0);
@@ -271,21 +273,32 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
     });
   }, [applyStylesToRendition]);
 
-  // Fast Navigation Actions (Stable callbacks)
+  // Fast Navigation Actions (Stable callbacks with crash guards)
   const handleNextPage = useCallback(() => {
+    if (loading) return;
     if (renditionRef.current && settingsRef.current.readingMode === 'paginated') {
-      renditionRef.current.next();
+      try {
+        renditionRef.current.next();
+      } catch (err) {
+        console.warn('[Reader] Next page notice:', err);
+      }
     }
-  }, []);
+  }, [loading]);
 
   const handlePrevPage = useCallback(() => {
+    if (loading) return;
     if (renditionRef.current && settingsRef.current.readingMode === 'paginated') {
-      renditionRef.current.prev();
+      try {
+        renditionRef.current.prev();
+      } catch (err) {
+        console.warn('[Reader] Prev page notice:', err);
+      }
     }
-  }, []);
+  }, [loading]);
 
   // Handle clicking inside the reader or iframe
   const handleReaderInteraction = useCallback((clickX, width) => {
+    if (loading) return;
     if (settingsRef.current.readingMode === 'paginated') {
       if (clickX < width * 0.22) {
         handlePrevPage();
@@ -301,7 +314,7 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
       setShowAppleMenu(false);
       setShowSettings(false);
     }
-  }, [handlePrevPage, handleNextPage]);
+  }, [loading, handlePrevPage, handleNextPage]);
 
   const handleReaderInteractionRef = useRef(handleReaderInteraction);
   useEffect(() => {
@@ -333,16 +346,17 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
             book.title,
             (pct, received, total, customText) => {
               if (!isMounted) return;
-              if (pct !== null) {
+              if (pct !== null && total) {
                 const scaled = Math.min(85, Math.max(25, 25 + Math.round((pct * 0.6))));
                 setDownloadProgress(scaled);
                 const mb = (received / (1024 * 1024)).toFixed(1);
-                const totalMb = total ? (total / (1024 * 1024)).toFixed(1) : '?';
+                const totalMb = (total / (1024 * 1024)).toFixed(1);
                 setDownloadDetail(`${mb} MB de ${totalMb} MB (${pct}%)`);
               } else if (customText) {
                 setDownloadDetail(customText);
               }
-            }
+            },
+            book.fallbackMd5s || []
           );
           
           if (!isMounted) return;
@@ -505,6 +519,9 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
 
       } catch (err) {
         console.error('Error loading EPUB in reader:', err);
+        if (book?.id) {
+          try { await clearBookBinary(book.id); } catch (e) {}
+        }
         if (isMounted) {
           setError(`Não foi possível abrir o livro: ${err.message || 'Formato incompatível ou falha na conexão'}.`);
           setLoading(false);
@@ -523,10 +540,11 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         try { bookInstanceRef.current.destroy(); } catch (e) {}
       }
     };
-  }, [book?.id, settings.readingMode, settings.pageSpread]);
+  }, [book?.id, settings.readingMode, settings.pageSpread, retryCount]);
 
   // Screen click handler on outer area
   const handleViewportAreaClick = (e) => {
+    if (loading) return;
     if (e.target.closest('button') || e.target.closest('.apple-books-floating-menu') || e.target.closest('.apple-settings-popover') || e.target.closest('.apple-toc-modal-drawer')) {
       return;
     }
@@ -754,24 +772,69 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
           </div>
         )}
 
-        {/* Error Fallback */}
+        {/* Error Fallback with Multi-Option Recovery */}
         {error && (
           <div className="apple-error-overlay" style={{ backgroundColor: currentThemeBody.background }}>
-            <div className="apple-error-card">
-              <div className="apple-error-icon">
-                <AlertCircle size={32} />
+            <div className="apple-error-card" style={{ maxWidth: '440px', textAlign: 'center', padding: '24px' }}>
+              <div className="apple-error-icon" style={{ margin: '0 auto 12px' }}>
+                <AlertCircle size={36} color="#ef4444" />
               </div>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 700 }}>Erro ao carregar livro</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '6px' }}>Erro ao carregar livro</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', lineHeight: '1.45', marginBottom: '18px' }}>
                 {error}
               </p>
-              <button 
-                className="btn-primary" 
-                onClick={onClose}
-                style={{ marginTop: '8px' }}
-              >
-                Voltar ao Início
-              </button>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                <button 
+                  className="btn-primary" 
+                  style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', fontWeight: 600 }}
+                  onClick={async () => {
+                    if (book?.id) await clearBookBinary(book.id);
+                    setError(null);
+                    setRetryCount(c => c + 1);
+                  }}
+                >
+                  <Loader2 size={16} className={retryCount > 0 ? 'animate-spin' : ''} />
+                  Tentar Novamente
+                </button>
+
+                {onSearchAlternative && book?.title && (
+                  <button 
+                    className="btn-secondary" 
+                    style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', gap: '8px' }}
+                    onClick={() => onSearchAlternative(book.title)}
+                  >
+                    <Search size={16} />
+                    Buscar Edições Alternativas
+                  </button>
+                )}
+
+                {onOpenImportModal && (
+                  <button 
+                    className="btn-secondary" 
+                    style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', gap: '8px' }}
+                    onClick={onOpenImportModal}
+                  >
+                    <BookOpen size={16} />
+                    Importar Arquivo (.EPUB / .PDF)
+                  </button>
+                )}
+
+                <button 
+                  style={{ 
+                    background: 'transparent', 
+                    border: 'none', 
+                    color: 'var(--text-muted)', 
+                    fontSize: '0.82rem', 
+                    padding: '8px', 
+                    cursor: 'pointer',
+                    marginTop: '4px' 
+                  }}
+                  onClick={onClose}
+                >
+                  Voltar à Biblioteca
+                </button>
+              </div>
             </div>
           </div>
         )}
