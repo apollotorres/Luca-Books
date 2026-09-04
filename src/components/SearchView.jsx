@@ -1,6 +1,6 @@
 import React from 'react';
 import { BookCard } from './BookCard';
-import { Search, Loader2, Sparkles, Zap, FileText, Globe } from 'lucide-react';
+import { Search, Loader2, Sparkles, Zap, Globe, Layers } from 'lucide-react';
 
 const POPULAR_GENRES = [
   'Machado de Assis',
@@ -35,8 +35,12 @@ export function SearchView({
             <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
               {searchQuery ? `Resultados para "${searchQuery}"` : 'Explorar & Buscar'}
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', marginTop: '2px' }}>
-              Pesquise no acervo universal do Anna's Archive com prioridade para livros em Português e arquivos leves.
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span>Busca integrada em tempo real:</span>
+              <span className="source-chip-mini chip-anna">🟣 Anna's Archive</span>
+              <span className="source-chip-mini chip-gutenberg">🏛️ Gutenberg</span>
+              <span className="source-chip-mini chip-archive">🌐 Archive.org</span>
+              <span className="source-chip-mini chip-openlib">📖 Open Library</span>
             </p>
           </div>
 
@@ -145,7 +149,7 @@ export function SearchView({
           }}>
             <Loader2 size={20} className="animate-spin" color="var(--accent-primary)" />
             <span style={{ fontSize: '0.88rem', fontWeight: 500, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>
-              Consultando acervo do Anna's Archive (Prioridade: {selectedLang === 'pt' ? '🇧🇷 Português' : 'Global'}, {selectedFormat === 'epub' ? 'EPUB ⚡' : 'Todos'})...
+              Consultando Anna's Archive, Gutenberg e Archive.org (Prioridade: {selectedLang === 'pt' ? '🇧🇷 Português' : 'Global'}, {selectedFormat === 'epub' ? 'EPUB ⚡' : 'Todos'})...
             </span>
           </div>
 
@@ -175,9 +179,9 @@ export function SearchView({
       {/* Results Grid */}
       {!isLoading && searchResults.length > 0 && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              {searchResults.length} livro{searchResults.length === 1 ? '' : 's'} encontrado{searchResults.length === 1 ? '' : 's'} • Prioridade: {selectedLang === 'pt' ? '🇧🇷 Português' : 'Todos'}.
+              {searchResults.length} livro{searchResults.length === 1 ? '' : 's'} encontrado{searchResults.length === 1 ? '' : 's'} em múltiplos acervos • Prioridade: {selectedLang === 'pt' ? '🇧🇷 Português' : 'Todos'}.
             </p>
             {selectedFormat === 'epub' && (
               <span style={{ fontSize: '0.75rem', color: 'var(--accent-primary-light)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '4px' }}>

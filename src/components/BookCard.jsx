@@ -1,6 +1,25 @@
 import React, { useState } from 'react';
 import { BookOpen, Star, CheckCircle } from 'lucide-react';
 
+export function getSourceInfo(source, sourceId) {
+  const s = (source || '').toLowerCase();
+  const id = (sourceId || '').toLowerCase();
+
+  if (s.includes('gutenberg') || id === 'gutenberg') {
+    return { name: 'Gutenberg', icon: '🏛️', className: 'source-gutenberg' };
+  }
+  if (s.includes('archive') || id === 'archive') {
+    return { name: 'Archive.org', icon: '🌐', className: 'source-archive' };
+  }
+  if (s.includes('open library') || id === 'openlibrary') {
+    return { name: 'Open Library', icon: '📖', className: 'source-openlibrary' };
+  }
+  if (s.includes('curador') || id === 'curated') {
+    return { name: 'Curadoria Luca', icon: '✨', className: 'source-curated' };
+  }
+  return { name: "Anna's Archive", icon: '🟣', className: 'source-annas' };
+}
+
 export function BookCard({ book, onOpen, isOffline = false, progress = 0 }) {
   const [imgSrc, setImgSrc] = useState(book.cover || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80');
 
@@ -10,6 +29,7 @@ export function BookCard({ book, onOpen, isOffline = false, progress = 0 }) {
 
   const isPortuguese = book.language === 'pt' || book.language === 'por' || !book.language;
   const langLabel = isPortuguese ? '🇧🇷 PT' : (book.language === 'es' ? '🇪🇸 ES' : '🇺🇸 EN');
+  const sourceInfo = getSourceInfo(book.source, book.sourceId);
 
   return (
     <div 
@@ -67,6 +87,14 @@ export function BookCard({ book, onOpen, isOffline = false, progress = 0 }) {
         <h3 className="book-card-title" title={book.title}>{book.title}</h3>
         <p className="book-card-author" title={book.author}>{book.author}</p>
 
+        {/* Source Provider Tag */}
+        <div className="book-card-source-row">
+          <span className={`book-card-source-tag ${sourceInfo.className}`} title={`Fonte do acervo: ${sourceInfo.name}`}>
+            <span>{sourceInfo.icon}</span>
+            <span>{sourceInfo.name}</span>
+          </span>
+        </div>
+
         {/* Progress Bar (if reading) */}
         {progress > 0 && (
           <div style={{ marginTop: '4px' }}>
@@ -90,7 +118,7 @@ export function BookCard({ book, onOpen, isOffline = false, progress = 0 }) {
               <span>{book.rating || '4.8'}</span>
             </div>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              {isPortuguese ? 'Português' : (book.genre || 'Inglês')}
+              {book.year ? book.year : (isPortuguese ? 'Português' : (book.genre || 'Inglês'))}
             </span>
           </div>
         )}

@@ -33,6 +33,7 @@ import {
   exportBookEpub 
 } from '../services/db';
 import { fetchBookEpubBinary } from '../services/api';
+import { getSourceInfo } from './BookCard';
 
 export const THEMES = {
   light: {
@@ -619,9 +620,16 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
         </div>
 
         <div className="apple-topbar-center">
-          <span className="apple-chapter-badge">
-            {currentChapter || book?.title || 'Capítulo'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <span className="apple-chapter-badge">
+              {currentChapter || book?.title || 'Capítulo'}
+            </span>
+            {book && (
+              <span className={`book-card-source-tag ${getSourceInfo(book.source, book.sourceId).className}`} style={{ fontSize: '0.62rem', padding: '1px 6px', margin: 0 }}>
+                {getSourceInfo(book.source, book.sourceId).icon} {getSourceInfo(book.source, book.sourceId).name}
+              </span>
+            )}
+          </div>
           <span className="apple-progress-subtext">
             {formattedPct}% lido • {settings.readingMode === 'paginated' ? (currentPageInfo || 'Páginas') : 'Scroll Contínuo'}
           </span>
@@ -711,8 +719,12 @@ export function ReaderModal({ book, onClose, onProgressUpdate }) {
                 <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
                   {book?.title}
                 </h3>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  {book?.author || "Anna's Archive"}
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span>{book?.author || 'Autor'}</span>
+                  <span>•</span>
+                  <span className={`book-card-source-tag ${getSourceInfo(book?.source, book?.sourceId).className}`} style={{ fontSize: '0.62rem', padding: '1px 6px', margin: 0 }}>
+                    {getSourceInfo(book?.source, book?.sourceId).icon} {getSourceInfo(book?.source, book?.sourceId).name}
+                  </span>
                 </p>
               </div>
 

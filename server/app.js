@@ -2,7 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { CURATED_COLLECTIONS } from './data/curatedBooks.js';
-import { searchAnnasArchive, resolveAnnaDownloadUrl } from './resolvers/annasResolver.js';
+import { 
+  searchAllSources, 
+  searchAnnasArchive, 
+  resolveAnnaDownloadUrl, 
+  resolveArchiveOrgEpub 
+} from './resolvers/annasResolver.js';
 
 const app = express();
 
@@ -18,13 +23,22 @@ router.get('/health', (req, res) => {
 
 // Curated Books Endpoint
 router.get('/curated', (req, res) => {
+  const taggedCollections = CURATED_COLLECTIONS.map(col => ({
+    ...col,
+    books: col.books.map(b => ({
+      ...b,
+      source: b.source || 'Curadoria Luca',
+      sourceId: b.sourceId || 'curated'
+    }))
+  }));
+
   res.json({
     timestamp: new Date().toISOString(),
-    collections: CURATED_COLLECTIONS
+    collections: taggedCollections
   });
 });
 
-// Exclusive Anna's Archive Search Endpoint
+// Unified Multi-Source Search Endpoint
 router.get('/search', async (req, res) => {
   const query = req.query.q;
   const lang = req.query.lang || 'all';
@@ -38,33 +52,39 @@ router.get('/search', async (req, res) => {
     });
   }
 
-  console.log(`[API /search] Exclusive Anna's Archive query: "${query}" (lang: ${lang}, format: ${format})`);
+  console.log(`[API /search] Unified Multi-Source query: "${query}" (lang: ${lang}, format: ${format})`);
   const queryLower = query.toLowerCase().trim();
 
-  // 1. Check curated books first for exact title matches
+  // 1. Check curated books first for exact title / author matches
   const allCuratedBooks = CURATED_COLLECTIONS.flatMap(c => c.books);
-  const matchedCurated = allCuratedBooks.filter(book => 
-    book.title.toLowerCase().includes(queryLower) ||
-    book.author.toLowerCase().includes(queryLower)
-  );
+  const matchedCurated = allCuratedBooks
+    .filter(book => 
+      book.title.toLowerCase().includes(queryLower) ||
+      book.author.toLowerCase().includes(queryLower)
+    )
+    .map(book => ({
+      ...book,
+      source: book.source || 'Curadoria Luca',
+      sourceId: 'curated'
+    }));
 
   try {
-    // 2. Query Anna's Archive exclusively
-    const annaBooks = await searchAnnasArchive(query, format, lang);
-    console.log(`[API /search] Anna's Archive returned ${annaBooks.length} books for "${query}"`);
+    // 2. Query all providers in parallel (Gutenberg, Internet Archive, Open Library, Anna's Archive)
+    const externalBooks = await searchAllSources(query, format, lang);
+    console.log(`[API /search] External search returned ${externalBooks.length} books for "${query}"`);
 
-    // Combine results: Curated matches (if any) -> Anna's Archive
+    // 3. Combine results: Curated matches -> Multi-source providers
     const combined = [...matchedCurated];
-    const seenTitles = new Set(matchedCurated.map(b => b.title.toLowerCase().trim()));
+    const seenTitles = new Set(matchedCurated.map(b => b.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30)));
+    const seenIds = new Set(matchedCurated.map(b => b.id));
 
-    annaBooks.forEach(book => {
+    externalBooks.forEach(book => {
       if (!book || !book.title) return;
       const normalizedTitle = book.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30);
-      if (!seenTitles.has(normalizedTitle) && !seenTitles.has(book.id)) {
+      if (!seenTitles.has(normalizedTitle) && !seenIds.has(book.id)) {
         seenTitles.add(normalizedTitle);
-        seenTitles.add(book.id);
+        seenIds.add(book.id);
         
-        book.source = "Anna's Archive";
         book.format = book.format || 'epub';
         book.language = book.language || 'pt';
         if (!book.badge) {
@@ -75,7 +95,7 @@ router.get('/search', async (req, res) => {
       }
     });
 
-    // Sort with highest priority to Portuguese books first, then exact matches
+    // 4. Sort with highest priority to Portuguese books first, verified EPUBs, then score
     combined.sort((a, b) => {
       const aIsPt = a.language === 'pt' ? 1 : 0;
       const bIsPt = b.language === 'pt' ? 1 : 0;
@@ -94,7 +114,7 @@ router.get('/search', async (req, res) => {
       results: combined
     });
   } catch (err) {
-    console.error(`[API /search] Anna's Archive search error:`, err.message);
+    console.error(`[API /search] Search error:`, err.message);
     res.json({
       query,
       count: matchedCurated.length,
@@ -103,20 +123,50 @@ router.get('/search', async (req, res) => {
   }
 });
 
-// Exclusive Anna's Archive Download & Stream Proxy
+// Multi-Source Download & Stream Proxy
 router.get('/download', async (req, res) => {
   let fileUrl = req.query.url;
   const bookId = req.query.id;
   const title = req.query.title;
   const rangeHeader = req.headers['range'];
 
-  if (!fileUrl && !bookId) {
-    return res.status(400).json({ error: 'Missing url or id parameter' });
+  if (!fileUrl && !bookId && !title) {
+    return res.status(400).json({ error: 'Missing url, id or title parameter' });
   }
 
-  console.log(`[Stream Proxy] Request to download: ${fileUrl} (id: ${bookId}, title: ${title || 'N/A'})`);
+  console.log(`[Stream Proxy] Request to download: ${fileUrl || 'N/A'} (id: ${bookId || 'N/A'}, title: "${title || 'N/A'}")`);
 
-  // 1. Resolve MD5 key download link on Anna's Archive mirrors
+  // 1. Direct handler for Internet Archive books (id: ia_identifier)
+  if (bookId && (bookId.startsWith('ia_') || bookId.startsWith('ol_'))) {
+    const iaId = bookId.replace(/^(ia_|ol_)/, '');
+    const iaDirect = await resolveArchiveOrgEpub(iaId);
+    if (iaDirect) {
+      const streamed = await tryStreamUrl(iaDirect, rangeHeader, res);
+      if (streamed) return;
+    }
+  }
+
+  // 2. Direct handler for Project Gutenberg books (id: gut_1234)
+  if (bookId && bookId.startsWith('gut_')) {
+    const gutNum = bookId.replace(/^gut_/, '');
+    const gutUrls = [
+      `https://www.gutenberg.org/ebooks/${gutNum}.epub3.images`,
+      `https://www.gutenberg.org/ebooks/${gutNum}.epub.images`,
+      `https://www.gutenberg.org/ebooks/${gutNum}.epub.noimages`
+    ];
+    for (const u of gutUrls) {
+      const streamed = await tryStreamUrl(u, rangeHeader, res);
+      if (streamed) return;
+    }
+  }
+
+  // 3. Direct external download URLs (Gutenberg, Archive.org, Open Library)
+  if (fileUrl && (fileUrl.includes('gutenberg.org/ebooks') || fileUrl.includes('archive.org/download'))) {
+    const streamed = await tryStreamUrl(fileUrl, rangeHeader, res);
+    if (streamed) return;
+  }
+
+  // 4. Resolve MD5 key download link on Anna's Archive / Libgen mirrors
   const md5Match = (fileUrl || '').match(/md5\/([a-f0-9]{32})/i) || 
                    (fileUrl || '').match(/md5=([a-f0-9]{32})/i) || 
                    (bookId || '').match(/anna_([a-f0-9]{32})/i);
@@ -125,13 +175,13 @@ router.get('/download', async (req, res) => {
     const md5 = md5Match[1];
     console.log(`[Stream Proxy] Resolving Anna's archive direct download for MD5: ${md5}...`);
     const resolvedUrl = await resolveAnnaDownloadUrl(md5, title);
-    if (resolvedUrl && resolvedUrl !== fileUrl) {
-      fileUrl = resolvedUrl;
-      console.log(`[Stream Proxy] Resolved to direct mirror: ${fileUrl}`);
+    if (resolvedUrl) {
+      const streamed = await tryStreamUrl(resolvedUrl, rangeHeader, res);
+      if (streamed) return;
     }
   }
 
-  // 2. Build list of mirror URLs
+  // 5. Curated dataset fallback links
   let fallbacks = [];
   if (bookId) {
     const allCurated = CURATED_COLLECTIONS.flatMap(c => c.books);
@@ -156,14 +206,14 @@ router.get('/download', async (req, res) => {
     }
   }
 
-  // 3. Try primary Anna mirrors
+  // 6. Try list of candidate URLs
   for (let i = 0; i < urlsToTry.length; i++) {
     const currentUrl = urlsToTry[i];
     const streamed = await tryStreamUrl(currentUrl, rangeHeader, res);
     if (streamed) return;
   }
 
-  // 4. Auto-recovery by title across Anna's Archive
+  // 7. Auto-recovery by title across Anna's Archive
   if (title && title.trim().length > 2) {
     console.log(`[Stream Proxy] Primary mirror failed. Auto-recovering across Anna's Archive for: "${title}"...`);
     try {
@@ -187,7 +237,7 @@ router.get('/download', async (req, res) => {
   }
 
   res.status(502).json({ 
-    error: 'Não foi possível baixar este livro no Anna\'s Archive no momento. Tente outra edição disponível.',
+    error: 'Não foi possível carregar este livro no momento. Tente outra edição disponível.',
     url: fileUrl 
   });
 });
