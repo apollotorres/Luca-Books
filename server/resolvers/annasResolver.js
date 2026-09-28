@@ -588,8 +588,23 @@ export async function searchAnnasArchive(query, format = 'epub', lang = 'all') {
 }
 
 /**
+ * Query Python FastAPI microservice (powered by curl_cffi for Anna's Archive / LibGen)
+ */
+export async function searchPythonService(query, format = 'epub', lang = 'all') {
+  if (!query || !query.trim()) return [];
+  try {
+    const res = await axios.get(`http://127.0.0.1:3089/search?q=${encodeURIComponent(query)}&format=${encodeURIComponent(format)}&lang=${encodeURIComponent(lang)}`, {
+      timeout: 6000
+    });
+    return res.data?.results || [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
  * 6. UNIFIED MULTI-SOURCE SEARCH RESOLVER WITH IN-MEMORY CACHE
- * Queries Project Gutenberg, Internet Archive, Open Library, and Anna's Archive in parallel.
+ * Queries Python Microservice (Anna's Archive/Libgen), Gutenberg, Internet Archive, Open Library in parallel.
  */
 export async function searchAllSources(query, format = 'epub', lang = 'all') {
   if (!query || !query.trim()) return [];
@@ -605,19 +620,21 @@ export async function searchAllSources(query, format = 'epub', lang = 'all') {
 
   console.log(`[Multi-Source Search] Querying all providers for: "${cleanQ}" (format: ${format}, lang: ${lang})`);
 
-  const [gutenbergSettled, archiveSettled, openLibSettled, annasSettled] = await Promise.allSettled([
+  const [pySettled, gutenbergSettled, archiveSettled, openLibSettled, annasSettled] = await Promise.allSettled([
+    searchPythonService(cleanQ, format, lang),
     searchGutenberg(cleanQ, lang),
     searchArchiveOrg(cleanQ, lang),
     searchOpenLibrary(cleanQ, lang),
     searchAnnasArchive(cleanQ, format, lang)
   ]);
 
+  const pyBooks = pySettled.status === 'fulfilled' ? pySettled.value : [];
   const gutenbergBooks = gutenbergSettled.status === 'fulfilled' ? gutenbergSettled.value : [];
   const archiveBooks = archiveSettled.status === 'fulfilled' ? archiveSettled.value : [];
   const openLibBooks = openLibSettled.status === 'fulfilled' ? openLibSettled.value : [];
   const annasBooks = annasSettled.status === 'fulfilled' ? annasSettled.value : [];
 
-  console.log(`[Multi-Source Search] Results: Gutenberg (${gutenbergBooks.length}), Archive.org (${archiveBooks.length}), OpenLibrary (${openLibBooks.length}), Anna's Archive (${annasBooks.length})`);
+  console.log(`[Multi-Source Search] Results: Python/Anna (${pyBooks.length}), Gutenberg (${gutenbergBooks.length}), Archive.org (${archiveBooks.length}), OpenLibrary (${openLibBooks.length})`);
 
   const combined = [];
   const seenNormTitles = new Set();
@@ -633,6 +650,7 @@ export async function searchAllSources(query, format = 'epub', lang = 'all') {
     }
   }
 
+  pyBooks.forEach(addIfUnique);
   gutenbergBooks.forEach(addIfUnique);
   annasBooks.forEach(addIfUnique);
   archiveBooks.forEach(addIfUnique);

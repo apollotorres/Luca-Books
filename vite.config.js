@@ -10,6 +10,12 @@ export default defineConfig({
       ignored: ['**/.agents/**', '**/node_modules/**', '**/.git/**', '**/dist/**']
     },
     proxy: {
+      '/api/py': {
+        target: 'http://localhost:3089',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api\/py/, '')
+      },
       '/api': {
         target: 'http://localhost:3088',
         changeOrigin: true,

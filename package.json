@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"node server/index.js\" \"vite\" --names \"API,VITE\" --prefix-colors \"blue,green\"",
+    "dev": "concurrently \"python server_py/main.py\" \"node server/index.js\" \"vite\" --names \"PY-API,NODE-API,VITE\" --prefix-colors \"yellow,blue,green\"",
+    "py": "python server_py/main.py",
     "server": "node server/index.js",
     "client": "vite",
     "build": "vite build",

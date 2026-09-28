@@ -1,16 +1,28 @@
-# React + Vite
+# 🎧 Luca-Books (Spotify for Books)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Leitor e buscador universal de livros e audiolivros, com interface moderna inspirada no Spotify e suporte a streaming contínuo de EPUB e PDF.
 
-Currently, two official plugins are available:
+## 🚀 Arquitetura Multi-Source com Python
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Frontend**: React + Vite + Lucide Icons + EPUB.js + PDF.js (porta `5173`)
+- **Backend Node.js (Express)**: API de orquestração, cache e proxy de stream (porta `3088`)
+- **Microserviço Python (FastAPI + `curl_cffi`)**: Busca e resolução resiliente no Anna's Archive / LibGen com bypass de proteções anti-bot (porta `3089`)
 
-## React Compiler
+## 📦 Como Rodar
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. **Instalar dependências Node & Python**:
+```bash
+npm install
+pip install -r server_py/requirements.txt
+```
 
-## Expanding the Oxlint configuration
+2. **Iniciar todos os serviços em paralelo**:
+```bash
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Isso inicializará concorrentemente:
+- `PY-API`: http://localhost:3089
+- `NODE-API`: http://localhost:3088
+- `VITE`: http://localhost:5173
+

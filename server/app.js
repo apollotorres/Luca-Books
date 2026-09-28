@@ -196,10 +196,18 @@ router.get('/download', async (req, res) => {
 
   const md5 = md5Match ? md5Match[1] : (candidateMd5s[0] || null);
 
-  // 6. Resolve all candidate direct mirror links in parallel
+  // 6. Build Python TLS bypass service resolver URL with auto-resolution
+  const pyParams = new URLSearchParams();
+  if (md5) pyParams.set('md5', md5);
+  if (bookId) pyParams.set('id', bookId);
+  if (title) pyParams.set('title', title);
+  if (candidateMd5s.length > 0) pyParams.set('fallbackMd5s', candidateMd5s.join(','));
+  const pyMicroserviceUrl = `http://127.0.0.1:3089/download?${pyParams.toString()}`;
+
   const resolvedDirectUrls = await resolveAllDownloadUrls(md5, title, candidateMd5s);
 
   const urlsToTry = Array.from(new Set([
+    pyMicroserviceUrl,
     ...resolvedDirectUrls,
     fileUrl && !fileUrl.includes('/books/') && !fileUrl.includes('/md5/') ? fileUrl : null,
     ...fallbacks
